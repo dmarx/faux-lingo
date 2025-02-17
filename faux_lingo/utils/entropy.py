@@ -8,7 +8,7 @@ from typing import Tuple
 import numpy as np
 from loguru import logger
 
-def compute_entropy(prob_vector: np.ndarray, eps: float = 1e-12) -> float:
+def compute_entropy(prob_vector: np.ndarray, eps: float = 1e-12) -> np.float64:
     """
     Compute the Shannon entropy (in bits) of a probability vector.
     Only considers nonzero entries.
@@ -28,7 +28,7 @@ def compute_cross_entropy(
     p: np.ndarray,
     q: np.ndarray,
     eps: float = 1e-12
-) -> float:
+) -> np.float64:
     """
     Compute the cross entropy H(p,q) = -sum(p_i * log(q_i)) between two
     probability distributions.
@@ -49,7 +49,7 @@ def compute_kl_divergence(
     p: np.ndarray,
     q: np.ndarray,
     eps: float = 1e-12
-) -> float:
+) -> np.float64:
     """
     Compute the Kullback-Leibler divergence D(p||q) between two probability
     distributions.
@@ -132,7 +132,7 @@ def analyze_transition_matrix(
 def compute_topic_diversity(
     topic_distributions: list[np.ndarray],
     eps: float = 1e-12
-) -> Tuple[float, np.ndarray]:
+) -> Tuple[np.float64, np.ndarray]:
     """
     Compute diversity measures between topics using KL divergence.
     
