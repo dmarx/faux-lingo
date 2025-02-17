@@ -83,49 +83,43 @@ class ArtifactGenerator:
 
         logger.info("Successfully built all artifacts")
         return self.artifacts
-
+        
     def save(self, directory: str | Path) -> None:
         """Save artifacts to a directory."""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-
-        # Save numpy arrays
+    
+        # Save numpy arrays and dictionaries separately
         for name, artifact in self.artifacts.items():
             if isinstance(artifact, np.ndarray):
                 np.save(directory / f"{name}.npy", artifact)
-            elif isinstance(artifact, (dict, list)):
+            elif isinstance(artifact, dict):
+                # Save dictionaries as JSON to preserve structure
+                with open(directory / f"{name}.json", "w") as f:
+                    json.dump(artifact, f)
+            elif isinstance(artifact, (list, tuple)):
                 np.save(directory / f"{name}.npy", np.array(artifact, dtype=object))
-
+    
         logger.info("Saved artifacts to {}", directory)
-
+    
     @classmethod
-    def load(
-        cls, directory: str | Path, config: GeneratorConfig
-    ) -> "ArtifactGenerator":
+    def load(cls, directory: str | Path, config: GeneratorConfig) -> "ArtifactGenerator":
         """Load artifacts from a directory."""
         directory = Path(directory)
         if not directory.exists():
             raise ValueError(f"Directory does not exist: {directory}")
-
+    
         generator = cls(config)
-
-        # Load numpy arrays
-        for name in [
-            "word_colors",
-            "transition_matrix",
-            "color_matrix",
-            "topic_modes",
-            "topic_matrices",
-            "topic_distributions",
-            "token_vocab",
-            "rune_vocab",
-            "char_vocab",
-            "word_vocab",
-        ]:
-            path = directory / f"{name}.npy"
-            if path.exists():
+    
+        # Load artifacts based on file extension
+        for path in directory.iterdir():
+            name = path.stem
+            if path.suffix == ".npy":
                 generator.artifacts[name] = np.load(path, allow_pickle=True)
-
+            elif path.suffix == ".json":
+                with open(path) as f:
+                    generator.artifacts[name] = json.load(f)
+    
         logger.info("Loaded artifacts from {}", directory)
         return generator
 
