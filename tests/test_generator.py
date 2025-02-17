@@ -119,7 +119,11 @@ def test_artifact_serialization(small_config, tmp_path):
     for key in artifacts:
         if isinstance(artifacts[key], np.ndarray):
             assert np.array_equal(artifacts[key], loaded_generator.artifacts[key])
-        elif isinstance(artifacts[key], (list, tuple)) and len(artifacts[key]) > 0 and isinstance(artifacts[key][0], np.ndarray):
+        elif (
+            isinstance(artifacts[key], (list, tuple))
+            and len(artifacts[key]) > 0
+            and isinstance(artifacts[key][0], np.ndarray)
+        ):
             # Handle lists/tuples of numpy arrays
             assert len(artifacts[key]) == len(loaded_generator.artifacts[key])
             for a1, a2 in zip(artifacts[key], loaded_generator.artifacts[key]):
