@@ -87,26 +87,27 @@ class TransitionMatrix:
         # Convert to transition matrix
         # Each row i is the topic distribution masked by valid transitions from token i
         batch_size = topic_mixture.shape[0]
-        transitions = torch.zeros(
-            (batch_size, self.vocab_size, self.vocab_size),
-            device=self.device,
-        )
 
-        # Vectorized operation across batch dimension
+        # Expand base probabilities to transition matrix shape
         transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
-        transitions = transitions * color_mask.unsqueeze(0)
+        
+        # Apply color mask to enforce transition constraints
+        transitions = transitions * color_mask
 
         # Apply minimum probability where transitions are allowed
         transitions = torch.where(
             color_mask > 0,
-            torch.maximum(transitions, torch.tensor(min_prob, device=self.device)),
+            torch.maximum(
+                transitions, torch.tensor(min_prob, device=self.device)
+            ),
             transitions,
         )
 
         # Normalize rows to get proper probability distributions
-        row_sums = transitions.sum(dim=-1, keepdim=True)
-        valid_rows = row_sums > 0
-        transitions[valid_rows] = transitions[valid_rows] / row_sums[valid_rows]
+        # Add small epsilon to avoid division by zero
+        eps = 1e-10
+        row_sums = transitions.sum(dim=-1, keepdim=True) + eps
+        transitions = transitions / row_sums
 
         return transitions
 
