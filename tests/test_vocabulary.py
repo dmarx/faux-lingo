@@ -163,3 +163,53 @@ def test_deterministic_generation():
     vocab2 = builder2.build()
 
     assert vocab1["word_vocab"] == vocab2["word_vocab"]
+
+def test_vocab_hierarchical_constraints():
+    """Test validation of hierarchical size constraints."""
+    # Test rune vocabulary constraint
+    with pytest.raises(ValueError, match="rune_vocab_size .* exceeds maximum"):
+        VocabConfig(
+            token_vocab_size=2,    # 2^1 = 2 possible runes
+            rune_vocab_size=3,     # But asking for 3 runes
+            char_vocab_size=4,
+            word_vocab_size=8,
+            tokens_per_rune=1,
+            runes_per_char=2,
+            chars_per_word=2,
+        ).validate()
+    
+    # Test character vocabulary constraint
+    with pytest.raises(ValueError, match="char_vocab_size .* exceeds maximum"):
+        VocabConfig(
+            token_vocab_size=2,
+            rune_vocab_size=2,     # 2^2 = 4 possible chars
+            char_vocab_size=5,     # But asking for 5 chars
+            word_vocab_size=8,
+            tokens_per_rune=1,
+            runes_per_char=2,
+            chars_per_word=2,
+        ).validate()
+    
+    # Test word vocabulary constraint
+    with pytest.raises(ValueError, match="word_vocab_size .* exceeds maximum"):
+        VocabConfig(
+            token_vocab_size=2,
+            rune_vocab_size=2,
+            char_vocab_size=2,     # 2^2 = 4 possible words
+            word_vocab_size=5,     # But asking for 5 words
+            tokens_per_rune=1,
+            runes_per_char=2,
+            chars_per_word=2,
+        ).validate()
+        
+    # Valid configuration that respects all constraints
+    valid_config = VocabConfig(
+        token_vocab_size=2,        # 2^1 = 2 possible runes
+        rune_vocab_size=2,         # 2^2 = 4 possible chars
+        char_vocab_size=2,         # 2^2 = 4 possible words
+        word_vocab_size=4,         # Valid as 4 <= 4
+        tokens_per_rune=1,
+        runes_per_char=2,
+        chars_per_word=2,
+    )
+    valid_config.validate()  # Should not raise
