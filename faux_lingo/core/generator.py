@@ -6,6 +6,7 @@ to produce synthetic language data.
 """
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
