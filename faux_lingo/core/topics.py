@@ -107,7 +107,7 @@ class TopicModel:
             self.topic_modes.append(mode_dict)
 
         logger.debug("Sampled mode words for {} topics", len(self.topic_modes))
-        
+
     def build_topic_matrices(self) -> None:
         """
         Generate topic-specific transition matrices by modifying the base matrix
@@ -115,35 +115,35 @@ class TopicModel:
         """
         if not self.topic_modes:
             raise RuntimeError("Topic modes must be sampled first")
-    
+
         self.topic_matrices = []
-    
+
         for topic_idx, mode_dict in enumerate(self.topic_modes):
             # Start with a copy of the base matrix
             topic_matrix = self.base_matrix.copy()
-    
+
             # Collect all mode words for this topic
             all_mode_words = {word for words in mode_dict.values() for word in words}
-    
+
             # First pass: boost transitions TO mode words
             for i in range(self.vocab_size):
                 row = topic_matrix[i].copy()
                 nonzero_indices = np.nonzero(row)[0]
-    
+
                 if len(nonzero_indices) > 0:
                     # Count mode words among targets
                     mode_targets = [j for j in nonzero_indices if j in all_mode_words]
-                    
+
                     if mode_targets:
                         # Apply stronger boost to mode word transitions
                         boost_factor = 1 + self.config.attachment_bias * 4
                         for j in mode_targets:
                             row[j] *= boost_factor
-    
+
                         # Normalize row
                         row /= row.sum()
                         topic_matrix[i] = row
-    
+
             # Second pass: boost transitions FROM mode words
             for i in all_mode_words:
                 row = topic_matrix[i].copy()
@@ -153,9 +153,9 @@ class TopicModel:
                     row *= mode_boost
                     row /= row.sum()
                     topic_matrix[i] = row
-    
+
             self.topic_matrices.append(topic_matrix)
-    
+
         logger.debug(
             "Built transition matrices for {} topics", len(self.topic_matrices)
         )

@@ -5,8 +5,8 @@ Core generator system that combines vocabulary, graph, and topic components
 to produce synthetic language data.
 """
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -84,12 +84,12 @@ class ArtifactGenerator:
 
         logger.info("Successfully built all artifacts")
         return self.artifacts
-        
+
     def save(self, directory: str | Path) -> None:
         """Save artifacts to a directory."""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-    
+
         # Save numpy arrays and dictionaries separately
         for name, artifact in self.artifacts.items():
             if isinstance(artifact, np.ndarray):
@@ -98,25 +98,31 @@ class ArtifactGenerator:
                 # Save dictionaries with type information
                 typed_dict = {
                     "type": "dict",
-                    "key_type": "int" if all(isinstance(k, int) for k in artifact.keys()) else "str",
-                    "data": {str(k): v for k, v in artifact.items()}
+                    "key_type": (
+                        "int"
+                        if all(isinstance(k, int) for k in artifact.keys())
+                        else "str"
+                    ),
+                    "data": {str(k): v for k, v in artifact.items()},
                 }
                 with open(directory / f"{name}.json", "w") as f:
                     json.dump(typed_dict, f)
             elif isinstance(artifact, (list, tuple)):
                 np.save(directory / f"{name}.npy", np.array(artifact, dtype=object))
-    
+
         logger.info("Saved artifacts to {}", directory)
-    
+
     @classmethod
-    def load(cls, directory: str | Path, config: GeneratorConfig) -> "ArtifactGenerator":
+    def load(
+        cls, directory: str | Path, config: GeneratorConfig
+    ) -> "ArtifactGenerator":
         """Load artifacts from a directory."""
         directory = Path(directory)
         if not directory.exists():
             raise ValueError(f"Directory does not exist: {directory}")
-    
+
         generator = cls(config)
-    
+
         # Load artifacts based on file extension
         for path in directory.iterdir():
             name = path.stem
@@ -125,7 +131,11 @@ class ArtifactGenerator:
             elif path.suffix == ".json":
                 with open(path) as f:
                     data = json.load(f)
-                    if isinstance(data, dict) and "type" in data and data["type"] == "dict":
+                    if (
+                        isinstance(data, dict)
+                        and "type" in data
+                        and data["type"] == "dict"
+                    ):
                         # Convert keys back to original type
                         if data["key_type"] == "int":
                             generator.artifacts[name] = {
@@ -135,7 +145,7 @@ class ArtifactGenerator:
                             generator.artifacts[name] = data["data"]
                     else:
                         generator.artifacts[name] = data
-    
+
         logger.info("Loaded artifacts from {}", directory)
         return generator
 
