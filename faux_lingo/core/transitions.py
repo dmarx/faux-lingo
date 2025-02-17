@@ -99,9 +99,7 @@ class TransitionMatrix:
         # Apply minimum probability where transitions are allowed
         transitions = torch.where(
             color_mask > 0,
-            torch.maximum(
-                transitions, torch.tensor(min_prob, device=self.device)
-            ),
+            torch.maximum(transitions, torch.tensor(min_prob, device=self.device)),
             transitions,
         )
 
