@@ -108,15 +108,10 @@ def compare_artifacts(artifacts1, artifacts2):
             assert np.array_equal(artifacts1[key], artifacts2[key])
         elif isinstance(artifacts1[key], (list, tuple)):
             assert len(artifacts1[key]) == len(artifacts2[key])
-            if len(artifacts1[key]) > 0:
-                if isinstance(artifacts1[key][0], np.ndarray):
-                    for a1, a2 in zip(artifacts1[key], artifacts2[key]):
-                        assert np.array_equal(a1, a2)
-                elif isinstance(artifacts1[key][0], (tuple, list)):
-                    for a1, a2 in zip(artifacts1[key], artifacts2[key]):
-                        assert np.array_equal(np.array(a1), np.array(a2))
-                else:
-                    assert artifacts1[key] == artifacts2[key]
+            # Convert both to numpy arrays for comparison if they aren't already
+            arr1 = np.array(artifacts1[key])
+            arr2 = np.array(artifacts2[key])
+            assert np.array_equal(arr1, arr2)
         elif isinstance(artifacts1[key], dict):
             compare_artifacts(artifacts1[key], artifacts2[key])
         else:
