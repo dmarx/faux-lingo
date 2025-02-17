@@ -3,6 +3,8 @@
 
 import pytest
 import torch
+from pathlib import Path
+from typing import TypeAlias
 
 from faux_lingo.core.topics import TopicVectorSpace
 
