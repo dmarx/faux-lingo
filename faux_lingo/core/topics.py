@@ -107,7 +107,7 @@ class TopicModel:
             self.topic_modes.append(mode_dict)
 
         logger.debug("Sampled mode words for {} topics", len(self.topic_modes))
-    
+        
     def build_topic_matrices(self) -> None:
         """
         Generate topic-specific transition matrices by modifying the base matrix
@@ -125,7 +125,7 @@ class TopicModel:
             # Collect all mode words for this topic
             all_mode_words = {word for words in mode_dict.values() for word in words}
     
-            # Modify transition probabilities for each word
+            # First pass: boost transitions TO mode words
             for i in range(self.vocab_size):
                 row = topic_matrix[i].copy()
                 nonzero_indices = np.nonzero(row)[0]
@@ -136,13 +136,23 @@ class TopicModel:
                     
                     if mode_targets:
                         # Apply stronger boost to mode word transitions
-                        boost_factor = 1 + self.config.attachment_bias * 2
+                        boost_factor = 1 + self.config.attachment_bias * 4
                         for j in mode_targets:
                             row[j] *= boost_factor
     
                         # Normalize row
                         row /= row.sum()
                         topic_matrix[i] = row
+    
+            # Second pass: boost transitions FROM mode words
+            for i in all_mode_words:
+                row = topic_matrix[i].copy()
+                if row.sum() > 0:
+                    # Boost existing transitions from mode words
+                    mode_boost = 1 + self.config.attachment_bias * 2
+                    row *= mode_boost
+                    row /= row.sum()
+                    topic_matrix[i] = row
     
             self.topic_matrices.append(topic_matrix)
     
