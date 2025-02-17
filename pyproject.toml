@@ -7,34 +7,39 @@ name = "faux-lingo"
 version = "0.1.0"
 description = "Research tool for generating synthetic datasets with parameterized information entropy and structural complexity"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "David Marx", email = "david.marx@gmail.com" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "torch>=2.0.0",
     "numpy>=1.21.0",
     "loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]
+torch = [
+    "torch>=2.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "types-PyYAML",
+    "types-setuptools",
+]
+all = [
+    "faux-lingo[torch,dev]"
 ]
 
 [tool.pytest.ini_options]
@@ -44,7 +49,7 @@ testpaths = ["tests"]
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py312']
 include = '\.pyi?$'
 
 [tool.isort]
@@ -52,7 +57,7 @@ profile = "black"
 multi_line_output = 3
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -64,3 +69,11 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
+ignore_missing_imports = true
+strict = true
+follow_imports = "normal"
+no_implicit_reexport = true
+enable_error_code = "truthy-bool,redundant-expr,ignore-without-code"
+explicit_package_bases = true
+# Enable applying suggested fixes
+pretty = true
