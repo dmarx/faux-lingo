@@ -3,6 +3,7 @@
 """Tests for the document generation system."""
 
 from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -11,9 +12,10 @@ from faux_lingo.core.generator import (
     DocumentGenerator,
     GeneratorConfig,
 )
-from faux_lingo.core.vocabulary import VocabConfig
 from faux_lingo.core.graph import GraphConfig
 from faux_lingo.core.topics import TopicConfig
+from faux_lingo.core.vocabulary import VocabConfig
+
 
 @pytest.fixture
 def small_config():
@@ -43,6 +45,7 @@ def small_config():
         ),
     )
 
+
 def test_generator_config_validation(small_config):
     """Test configuration validation."""
     small_config.validate()  # Should not raise
@@ -70,6 +73,7 @@ def test_generator_config_validation(small_config):
     )
     with pytest.raises(ValueError, match="Vocabulary size mismatch"):
         bad_config.validate()
+
 
 def test_artifact_generation(small_config):
     """Test generation of all artifacts."""
@@ -99,6 +103,7 @@ def test_artifact_generation(small_config):
     assert len(artifacts["topic_matrices"]) == small_config.topic_config.num_topics
     assert len(artifacts["topic_distributions"]) == small_config.topic_config.num_topics
 
+
 def test_artifact_serialization(small_config, tmp_path):
     """Test saving and loading of artifacts."""
     generator = ArtifactGenerator(small_config, seed=42)
@@ -117,6 +122,7 @@ def test_artifact_serialization(small_config, tmp_path):
         else:
             assert artifacts[key] == loaded_generator.artifacts[key]
 
+
 def test_document_generation(small_config):
     """Test generation of individual documents."""
     # Generate artifacts
@@ -134,7 +140,7 @@ def test_document_generation(small_config):
 
     # Generate a document
     doc = doc_gen.generate(doc_length=5)
-    
+
     # Check it's a valid numpy array
     assert isinstance(doc, np.ndarray)
     assert doc.dtype == np.int64
@@ -143,6 +149,7 @@ def test_document_generation(small_config):
     if doc_gen.include_markers:
         assert doc[0] == doc_gen.BOD_TOKEN
         assert doc[-1] == doc_gen.EOD_TOKEN
+
 
 def test_document_entropy_computation(small_config):
     """Test entropy computation during document generation."""
@@ -165,7 +172,8 @@ def test_document_entropy_computation(small_config):
     # Check entropy measures
     assert entropy >= 0
     assert perplexity >= 1
-    assert np.isclose(perplexity, 2 ** entropy)
+    assert np.isclose(perplexity, 2**entropy)
+
 
 def test_deterministic_document_generation(small_config):
     """Test that document generation is deterministic with fixed seed."""
@@ -183,6 +191,7 @@ def test_deterministic_document_generation(small_config):
 
     # Check they're identical
     assert np.array_equal(doc1, doc2)
+
 
 def test_document_token_validity(small_config):
     """Test that generated documents contain valid tokens."""
