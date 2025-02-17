@@ -1,3 +1,226 @@
+# Synthetic Sequence Generator
+
+A PyTorch-based generator for creating synthetic sequences with controlled topic and transition structure. This tool allows generation of token sequences that respect both global topic distributions and local transition constraints.
+
+## Features
+
+- Generate sequences with controlled topic mixtures
+- Color-based token classes with customizable transition rules
+- GPU-accelerated batch sequence generation
+- Serializable language parameters
+- Type-safe tensor operations with jaxtyping
+
+## Installation
+
+```bash
+pip install torch jaxtyping tensorizer
+pip install -e .
+```
+
+## Quick Start
+
+```python
+import torch
+from prob_color_gen import ProbColorConstrainedGenerator
+
+# Define language structure
+color_fractions = [3, 5, 2]  # Will normalize to [0.3, 0.5, 0.2]
+color_transitions = torch.tensor([
+    [1.0, 0.5, 0.1],  # Strong self-transitions
+    [0.4, 1.0, 0.7],  # Moderate cross-transitions
+    [0.2, 0.6, 1.0]   # Varied transition strengths
+])
+
+# Create generator
+generator = ProbColorConstrainedGenerator(
+    n_topics=10,        # Number of topics
+    vocab_size=1000,    # Vocabulary size
+    color_fractions=color_fractions,
+    color_transitions=color_transitions
+)
+
+# Generate sequences
+sequences, mixtures = generator.sample_sequences(
+    batch_size=32,      # Number of sequences
+    seq_length=100,     # Length of each sequence
+    temperature=0.8     # Controls randomness
+)
+
+# Save language for later use
+generator.save_language("my_language.tensors")
+```
+
+## Detailed Usage
+
+### Topic Mixtures
+
+Topic mixtures control the global distribution of tokens. You can specify exact mixtures:
+
+```python
+specific_mixture = torch.tensor([
+    [0.4, 0.3, 0.2, 0.1] + [0.0] * 6  # Focus on first 4 topics
+]).repeat(32, 1)  # Batch size of 32
+
+sequences, mixtures = generator.sample_sequences(
+    batch_size=32,
+    seq_length=100,
+    mixtures=specific_mixture
+)
+```
+
+### Color Transitions
+
+Colors represent token classes with controlled transition probabilities. The transition matrix determines allowed transitions:
+
+```python
+# Example: Three color classes
+color_transitions = torch.tensor([
+    [1.0, 0.5, 0.0],  # Color 0 can't transition to color 2
+    [0.4, 1.0, 0.7],  # Color 1 can transition to all colors
+    [0.0, 0.6, 1.0]   # Color 2 can't transition to color 0
+])
+```
+
+### Serialization
+
+Save and load language parameters to reproduce exact sequences:
+
+```python
+# Save language
+generator.save_language("my_language.tensors")
+
+# Load language
+loaded_generator = ProbColorConstrainedGenerator.load_language(
+    "my_language.tensors"
+)
+
+# Generate with same topic mixtures
+new_sequences, _ = loaded_generator.sample_sequences(
+    batch_size=32,
+    mixtures=mixtures  # Reuse previous mixtures
+)
+```
+
+## How It Works
+
+The sequence generation process involves three main stages:
+
+```mermaid
+graph TD
+    subgraph Setup["Initial Setup"]
+        A[/"Color Fractions<br>[0.3, 0.5, 0.2]"/] --> B[Vocabulary Ranges]
+        C[/"Color Transitions<br>Matrix (3x3)"/] --> D[Block Transition Mask]
+        E[/"Topic Vectors<br>(k × vocab_size)"/] --> F[Orthonormal Basis]
+    end
+
+    subgraph Generation["Matrix Generation"]
+        G[/"Topic Mixtures<br>(batch × k)"/] --> H[Diagonal λ Matrices]
+        F --> I[Matrix Construction<br>M = QΛQᵀ]
+        H --> I
+        D --> J[Apply Transition Mask]
+        I --> J
+        J --> K[Normalize Rows]
+    end
+
+    subgraph Sampling["Sequence Sampling"]
+        K --> L[Sample Initial Tokens]
+        L --> M[Current Token States]
+        M --> N[Get Transition Probs]
+        N --> O[Sample Next Tokens]
+        O --> |Repeat|M
+    end
+```
+
+1. **Setup Phase**:
+   - Color fractions determine vocabulary partitioning
+   - Color transitions expanded to full vocabulary mask
+   - Topic vectors form orthonormal basis for mixing
+
+2. **Matrix Generation**:
+   - Sample or specify topic mixtures
+   - Construct transition matrices via QΛQᵀ
+   - Apply color transition constraints
+   - Normalize to get probability matrices
+
+3. **Sequence Sampling**:
+   - Sample initial tokens (optionally by color)
+   - For each position:
+     * Get transition probabilities for current tokens
+     * Sample next tokens from these distributions
+     * Update current states and repeat
+
+## Mathematical Details
+
+### Topic Space Construction
+
+1. **Topic Vectors**: 
+   - Q ∈ ℝ^(k×v) where k is number of topics, v is vocabulary size
+   - Q is orthonormal: QQᵀ = I
+   - Each row qᵢ represents a topic distribution over vocabulary
+
+2. **Topic Mixtures**:
+   - λ ∈ ℝ^k for each sequence, where Σᵢλᵢ = 1
+   - Λ = diag(λ) forms diagonal matrix of mixture weights
+   - For batch b, we have Λ ∈ ℝ^(b×k×k)
+
+3. **Base Transition Matrix**:
+   - M = QΛQᵀ gives raw transition probabilities
+   - Each row mᵢ represents transition distribution from token i
+   - M ∈ ℝ^(b×v×v) for batch size b
+
+### Color Constraints
+
+1. **Color Fractions**:
+   - f ∈ ℝ^c where c is number of colors and Σᵢfᵢ = 1
+   - Vocabulary ranges: rᵢ = [⌊Σⱼ₍₌₁..ᵢ₋₁₎fⱼv⌋, ⌊Σⱼ₍₌₁..ᵢ₎fⱼv⌋]
+
+2. **Color Transitions**:
+   - T ∈ ℝ^(c×c) where Tᵢⱼ ≥ 0
+   - Tᵢⱼ represents relative strength of transitions from color i to j
+   - Zero entries enforce forbidden transitions
+
+3. **Block Mask Construction**:
+   - W ∈ ℝ^(v×v) constructed from T
+   - Wᵤᵥ = Tᵢⱼ where u ∈ rᵢ, v ∈ rⱼ
+   - Final transitions: P = normalize(M ⊙ W)
+
+### Sequence Generation
+
+For batch size b and sequence length s:
+
+1. **Initial State**:
+   - x₀ ∈ ℕ^b sampled uniformly or from specified color range
+   - P ∈ ℝ^(b×v×v) is batch of transition matrices
+
+2. **Token Generation**:
+   - For t = 1 to s:
+     * pₜ = P[batch_idx, xₜ₋₁] gets transition probs
+     * xₜ ∼ Categorical(pₜ) samples next tokens
+   - Final sequences X ∈ ℕ^(b×s)
+
+3. **Probability Properties**:
+   - Row stochastic: Σⱼpᵢⱼ = 1 ∀i
+   - Block structure: pᵢⱼ = 0 if colors i,j forbidden
+   - Respects topic mixtures: E[pᵢⱼ] reflects λ
+
+## Technical Details
+
+### Tensor Dimensions
+
+- `batch`: Number of sequences/matrices being generated
+- `seq_len`: Length of generated sequences
+- `vocab_size`: Total number of possible tokens
+- `num_topics`: Number of topics in latent space
+- `num_colors`: Number of color classes
+
+### Key Shapes
+
+- `color_fractions: [num_colors]`
+- `color_transitions: [num_colors, num_colors]`
+- `topic_vectors: [num_topics, vocab_size]`
+- `topic_mixtures: [batch, num_topics]`
+- `sequences: [batch, seq_len]`
+- `transition_matrices: [batch, vocab_size, vocab_size]`
 
 
 # Mathematical Appendix
