@@ -1,6 +1,8 @@
 # Faux-Lingo
 
-Faux-Lingo is a toolkit for generating synthetic language data using a constructed language framework. It simulates low-entropy, structured corpora via a graph-based topic model with color-coded (i.e. grammar-inspired) transitions, preferential attachment, and hierarchical vocabulary construction.
+Faux-Lingo is a research toolkit for generating synthetic datasets with parameterized information entropy and structural complexity. It simulates low-entropy, structured corpora via a graph-based topic model with color-coded (i.e. grammar-inspired) transitions, preferential attachment, and hierarchical vocabulary construction.
+
+The motivation for this tool is to construct controlled experiments probing the dynamics of information flow in statistical learning processes.
 
 ## Features
 
