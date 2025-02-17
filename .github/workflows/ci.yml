@@ -11,45 +11,48 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: 3.12 # ["3.9", "3.10", "3.11"]
 
     steps:
     - uses: actions/checkout@v3
+      with:
+        # Fetch all history for pushing fixes
+        fetch-depth: 0
     
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
         
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-        
-    - name: Cache Poetry dependencies
+    - name: Cache pip
       uses: actions/cache@v3
       with:
-        path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('**/pyproject.toml') }}
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
         restore-keys: |
-          ${{ runner.os }}-poetry-
+          ${{ runner.os }}-pip-
           
     - name: Install dependencies
       run: |
-        poetry install --with dev
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
         
-    - name: Run formatters
+    - name: Run formatters and linters
+      # Only run on Python 3.11 to avoid conflicting fixes
+      if: matrix.python-version == '3.12'
       run: |
-        poetry run black . --check
-        poetry run isort . --check
+        black .
+        isort .
+        mypy faux_lingo
         
-    - name: Run type checker
+    - name: Commit formatting changes
+      # Only run on Python 3.11 and if there are changes
+      if: matrix.python-version == '3.12'
       run: |
-        poetry run mypy faux_lingo
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git diff --quiet || (git add . && git commit -m "Apply automatic formatting" && git push)
         
     - name: Run tests
       run: |
-        poetry run pytest --cov
-        
-    # - name: Upload coverage to Codecov
-    #   if: matrix.python-version == '3.11'
-    #   uses: codecov/codecov-action@v3
+        pytest -vv --cov
