@@ -107,55 +107,38 @@ class TopicModel:
             self.topic_modes.append(mode_dict)
 
         logger.debug("Sampled mode words for {} topics", len(self.topic_modes))
-
+        
     def build_topic_matrices(self) -> None:
         """
-        Generate topic-specific transition matrices by modifying the base matrix
-        according to each topic's mode words.
+        Generate topic-specific transition matrices by applying small random
+        perturbations to the base matrix while preserving sparsity patterns.
         """
         if not self.topic_modes:
             raise RuntimeError("Topic modes must be sampled first")
-
+    
         self.topic_matrices = []
-
+        epsilon = self.config.attachment_bias  # Use attachment_bias as perturbation scale
+    
         for topic_idx, mode_dict in enumerate(self.topic_modes):
-            # Start with a copy of the base matrix
-            topic_matrix = self.base_matrix.copy()
-
-            # Collect all mode words for this topic
-            all_mode_words = {word for words in mode_dict.values() for word in words}
-
-            # First pass: boost transitions TO mode words
-            for i in range(self.vocab_size):
-                row = topic_matrix[i].copy()
-                nonzero_indices = np.nonzero(row)[0]
-
-                if len(nonzero_indices) > 0:
-                    # Count mode words among targets
-                    mode_targets = [j for j in nonzero_indices if j in all_mode_words]
-
-                    if mode_targets:
-                        # Apply stronger boost to mode word transitions
-                        boost_factor = 1 + self.config.attachment_bias * 4
-                        for j in mode_targets:
-                            row[j] *= boost_factor
-
-                        # Normalize row
-                        row /= row.sum()
-                        topic_matrix[i] = row
-
-            # Second pass: boost transitions FROM mode words
-            for i in all_mode_words:
-                row = topic_matrix[i].copy()
-                if row.sum() > 0:
-                    # Boost existing transitions from mode words
-                    mode_boost = 1 + self.config.attachment_bias * 2
-                    row *= mode_boost
-                    row /= row.sum()
-                    topic_matrix[i] = row
-
+            # Get sparsity pattern from base matrix
+            nonzero_mask = self.base_matrix > 0
+    
+            # Generate random perturbation matrix with same sparsity
+            perturbation = self._np_rng.rand(*self.base_matrix.shape)
+            perturbation = perturbation * nonzero_mask  # Apply sparsity mask
+            perturbation = perturbation / perturbation.sum(axis=1, keepdims=True)
+            perturbation = np.nan_to_num(perturbation)  # Handle zero rows
+    
+            # Combine base matrix with perturbation
+            topic_matrix = (1 - epsilon) * self.base_matrix + epsilon * perturbation
+    
+            # Ensure it's still row-stochastic
+            row_sums = topic_matrix.sum(axis=1, keepdims=True)
+            mask = row_sums > 0
+            topic_matrix[mask] = topic_matrix[mask] / row_sums[mask]
+    
             self.topic_matrices.append(topic_matrix)
-
+    
         logger.debug(
             "Built transition matrices for {} topics", len(self.topic_matrices)
         )
