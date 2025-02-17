@@ -3,7 +3,7 @@ import torch
 import tempfile
 from pathlib import Path
 import numpy as np
-from prob_color_gen import (
+from faux_lingo.generator import (
     ProbColorConstrainedGenerator,
     LanguageParams,
     validate_shapes
