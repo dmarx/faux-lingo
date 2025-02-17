@@ -9,45 +9,44 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12"] # ["3.9", "3.10", "3.11"]
-
     steps:
     - uses: actions/checkout@v3
       with:
-        # Fetch all history for pushing fixes
         fetch-depth: 0
     
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: "3.12"
         
     - name: Cache pip
       uses: actions/cache@v3
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-pip-
           
-    - name: Install dependencies
+    - name: Install base package
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+        echo "::group::Install Timing - Base Package"
+        time pip install -e .
+        echo "::endgroup::"
+        
+    - name: Install dev dependencies
+      run: |
+        echo "::group::Install Timing - Dev Dependencies"
+        time pip install -e ".[dev]"
+        echo "::endgroup::"
         
     - name: Run formatters and linters
-      # Only run on Python 3.11 to avoid conflicting fixes
-      if: matrix.python-version == '3.12'
       run: |
         black .
         isort .
         mypy faux_lingo
         
     - name: Commit formatting changes
-      # Only run on Python 3.11 and if there are changes
-      if: matrix.python-version == '3.12'
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
@@ -55,4 +54,37 @@ jobs:
         
     - name: Run tests
       run: |
-        pytest -vv --cov
+        pytest --cov
+        
+    # - name: Upload coverage to Codecov
+    #   uses: codecov/codecov-action@v3
+
+  torch-tests:
+    runs-on: ubuntu-latest
+    needs: test  # Only run after main tests pass
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+        
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-torch-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-torch-
+          
+    - name: Install package with PyTorch
+      run: |
+        python -m pip install --upgrade pip
+        echo "::group::Install Timing - Full Package with PyTorch"
+        time pip install -e ".[all]"
+        echo "::endgroup::"
+        
+    - name: Run PyTorch-specific tests
+      run: |
+        pytest tests/test_torch_*.py
