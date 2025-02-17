@@ -74,3 +74,6 @@ enable_error_code = "truthy-bool,redundant-expr,ignore-without-code"
 explicit_package_bases = true
 # Enable applying suggested fixes
 pretty = true
+
+[tool.setuptools.packages.find]
+exclude = ["attic*"]
