@@ -23,13 +23,12 @@ classifiers = [
 dependencies = [
     "numpy>=1.21.0",
     "loguru>=0.7.0",
+    "torch>=2.0.0",
+    "jaxtyping",
+    "tensorizer",
 ]
 
 [project.optional-dependencies]
-torch = [
-    "torch>=2.0.0",
-    "jaxtyping",
-]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -38,9 +37,6 @@ dev = [
     "mypy>=1.0.0",
     "types-PyYAML",
     "types-setuptools",
-]
-all = [
-    "faux-lingo[torch,dev]"
 ]
 
 [tool.pytest.ini_options]
