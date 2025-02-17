@@ -3,7 +3,6 @@
 """Tests for the document generation system."""
 
 from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -12,9 +11,9 @@ from faux_lingo.core.generator import (
     DocumentGenerator,
     GeneratorConfig,
 )
+from faux_lingo.core.vocabulary import VocabConfig
 from faux_lingo.core.graph import GraphConfig
 from faux_lingo.core.topics import TopicConfig
-from faux_lingo.core.vocabulary import VocabConfig
 
 
 @pytest.fixture
@@ -38,11 +37,7 @@ def small_config():
             epsilon=0.1,
             random_color_transitions=False,
         ),
-        topic_config=TopicConfig(
-            num_topics=2,
-            modes_per_color=1,
-            attachment_bias=0.5,
-        ),
+        topic_config=TopicConfig(num_topics=2, modes_per_color=1, attachment_bias=0.5),
     )
 
 
@@ -104,6 +99,29 @@ def test_artifact_generation(small_config):
     assert len(artifacts["topic_distributions"]) == small_config.topic_config.num_topics
 
 
+def compare_artifacts(artifacts1, artifacts2):
+    """Helper function to compare two artifact dictionaries."""
+    assert artifacts1.keys() == artifacts2.keys()
+    for key in artifacts1:
+        if isinstance(artifacts1[key], np.ndarray):
+            assert np.array_equal(artifacts1[key], artifacts2[key])
+        elif isinstance(artifacts1[key], (list, tuple)):
+            assert len(artifacts1[key]) == len(artifacts2[key])
+            if len(artifacts1[key]) > 0:
+                if isinstance(artifacts1[key][0], np.ndarray):
+                    for a1, a2 in zip(artifacts1[key], artifacts2[key]):
+                        assert np.array_equal(a1, a2)
+                elif isinstance(artifacts1[key][0], (tuple, list)):
+                    for a1, a2 in zip(artifacts1[key], artifacts2[key]):
+                        assert np.array_equal(np.array(a1), np.array(a2))
+                else:
+                    assert artifacts1[key] == artifacts2[key]
+        elif isinstance(artifacts1[key], dict):
+            compare_artifacts(artifacts1[key], artifacts2[key])
+        else:
+            assert artifacts1[key] == artifacts2[key]
+
+
 def test_artifact_serialization(small_config, tmp_path):
     """Test saving and loading of artifacts."""
     generator = ArtifactGenerator(small_config, seed=42)
@@ -116,20 +134,7 @@ def test_artifact_serialization(small_config, tmp_path):
     loaded_generator = ArtifactGenerator.load(tmp_path, small_config)
 
     # Compare artifacts
-    for key in artifacts:
-        if isinstance(artifacts[key], np.ndarray):
-            assert np.array_equal(artifacts[key], loaded_generator.artifacts[key])
-        elif (
-            isinstance(artifacts[key], (list, tuple))
-            and len(artifacts[key]) > 0
-            and isinstance(artifacts[key][0], np.ndarray)
-        ):
-            # Handle lists/tuples of numpy arrays
-            assert len(artifacts[key]) == len(loaded_generator.artifacts[key])
-            for a1, a2 in zip(artifacts[key], loaded_generator.artifacts[key]):
-                assert np.array_equal(a1, a2)
-        else:
-            assert artifacts[key] == loaded_generator.artifacts[key]
+    compare_artifacts(artifacts, loaded_generator.artifacts)
 
 
 def test_document_generation(small_config):
@@ -181,7 +186,7 @@ def test_document_entropy_computation(small_config):
     # Check entropy measures
     assert entropy >= 0
     assert perplexity >= 1
-    assert np.isclose(perplexity, 2**entropy)
+    assert np.isclose(perplexity, 2 ** entropy)
 
 
 def test_deterministic_document_generation(small_config):
