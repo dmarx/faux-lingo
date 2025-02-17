@@ -35,6 +35,8 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "types-PyYAML",
+    "types-setuptools",
 ]
 all = [
     "faux-lingo[torch,dev]"
@@ -67,3 +69,11 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
+ignore_missing_imports = true
+strict = true
+follow_imports = "normal"
+no_implicit_reexport = true
+enable_error_code = "truthy-bool,redundant-expr,ignore-without-code"
+explicit_package_bases = true
+# Enable applying suggested fixes
+pretty = true
