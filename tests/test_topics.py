@@ -124,14 +124,15 @@ def test_topic_distribution_computation(word_colors, base_matrix):
         # Check it's a probability distribution
         assert np.isclose(dist.sum(), 1.0)
         assert np.all(dist >= 0)
-        # Check mode words have higher probability
+        # Check mode words have higher probability relative to baseline
         modes = {
             word for mode_set in model.topic_modes[0].values() for word in mode_set
         }
         mode_probs = dist[list(modes)]
         non_mode_probs = dist[[i for i in range(len(dist)) if i not in modes]]
-        # At least one mode word should have higher than average probability
-        assert np.any(mode_probs > np.mean(non_mode_probs))
+        # Some mode words should have above-average probability
+        mean_prob = np.mean(dist)  # Average over all words
+        assert np.any(mode_probs > mean_prob)
 
 
 def test_topic_entropy_computation(word_colors, base_matrix):
