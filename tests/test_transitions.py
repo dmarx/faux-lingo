@@ -4,9 +4,9 @@
 import pytest
 import torch
 
-from faux_lingo.core.transitions import TransitionMatrix
-from faux_lingo.core.topics import TopicVectorSpace
 from faux_lingo.core.colors import ColorSpace
+from faux_lingo.core.topics import TopicVectorSpace
+from faux_lingo.core.transitions import TransitionMatrix
 
 
 @pytest.fixture
@@ -63,11 +63,13 @@ def test_probability_properties(simple_matrix):
 def test_color_constraints(simple_matrix):
     """Test that color transition constraints are respected."""
     # Set up transition weights that forbid some transitions
-    weights = torch.tensor([
-        [1.0, 0.0, 0.0],  # Color 0 can only transition to itself
-        [0.0, 1.0, 0.0],  # Color 1 can only transition to itself
-        [0.0, 0.0, 1.0],  # Color 2 can only transition to itself
-    ])
+    weights = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],  # Color 0 can only transition to itself
+            [0.0, 1.0, 0.0],  # Color 1 can only transition to itself
+            [0.0, 0.0, 1.0],  # Color 2 can only transition to itself
+        ]
+    )
     simple_matrix.color_space.transition_weights = weights
 
     # Generate transitions
@@ -104,10 +106,12 @@ def test_temperature_effect(simple_matrix):
 def test_batch_generation(simple_matrix):
     """Test generation of multiple matrices simultaneously."""
     # Create batch of different mixtures
-    mixtures = torch.tensor([
-        [0.8, 0.2],  # First sequence favors topic 0
-        [0.2, 0.8],  # Second sequence favors topic 1
-    ])
+    mixtures = torch.tensor(
+        [
+            [0.8, 0.2],  # First sequence favors topic 0
+            [0.2, 0.8],  # Second sequence favors topic 1
+        ]
+    )
 
     transitions = simple_matrix.generate(mixtures)
 
