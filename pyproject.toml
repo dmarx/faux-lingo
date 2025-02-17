@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 torch = [
     "torch>=2.0.0",
+    "jaxtyping",
 ]
 dev = [
     "pytest>=7.0.0",
