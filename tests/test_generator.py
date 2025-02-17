@@ -2,6 +2,7 @@
 
 """Tests for the document generation system."""
 
+import json
 from pathlib import Path
 
 import numpy as np
