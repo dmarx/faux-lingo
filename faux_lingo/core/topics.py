@@ -107,45 +107,41 @@ class TopicModel:
             self.topic_modes.append(mode_dict)
 
         logger.debug("Sampled mode words for {} topics", len(self.topic_modes))
-
+        
     def build_topic_matrices(self) -> None:
         """
-        Generate topic-specific transition matrices by applying small random
-        perturbations to the base matrix while preserving sparsity patterns.
+        Generate topic-specific transition matrices by boosting transitions to mode words
+        while preserving color constraints.
         """
         if not self.topic_modes:
             raise RuntimeError("Topic modes must be sampled first")
-
+    
         self.topic_matrices = []
-        epsilon = (
-            self.config.attachment_bias
-        )  # Use attachment_bias as perturbation scale
-
+    
         for topic_idx, mode_dict in enumerate(self.topic_modes):
-            # Get sparsity pattern from base matrix
-            nonzero_mask = self.base_matrix > 0
-
-            # Generate random perturbation matrix with same sparsity
-            perturbation = self._np_rng.rand(*self.base_matrix.shape)
-            perturbation = perturbation * nonzero_mask  # Apply sparsity mask
-
-            # Normalize rows of perturbation matrix
-            row_sums = perturbation.sum(axis=1)
-            for i in range(len(row_sums)):
-                if row_sums[i] > 0:
-                    perturbation[i] = perturbation[i] / row_sums[i]
-
-            # Combine base matrix with perturbation
-            topic_matrix = (1 - epsilon) * self.base_matrix + epsilon * perturbation
-
-            # Ensure it's still row-stochastic
-            row_sums = topic_matrix.sum(axis=1)
-            for i in range(len(row_sums)):
-                if row_sums[i] > 0:
-                    topic_matrix[i] = topic_matrix[i] / row_sums[i]
-
+            # Start with a copy of the base matrix
+            topic_matrix = self.base_matrix.copy()
+    
+            # For each non-zero transition in the base matrix
+            for i in range(self.vocab_size):
+                targets = np.nonzero(topic_matrix[i])[0]
+                if len(targets) > 0:
+                    # Get the weights for each target
+                    weights = np.ones(len(targets))
+                    for j, target in enumerate(targets):
+                        target_color = self.word_colors[target]
+                        if target in mode_dict.get(target_color, set()):
+                            weights[j] *= (1 + self.config.attachment_bias)
+                    
+                    # Normalize weights to maintain probability distribution
+                    weights = weights / weights.sum()
+                    
+                    # Update transition probabilities
+                    for j, target in enumerate(targets):
+                        topic_matrix[i, target] = weights[j]
+    
             self.topic_matrices.append(topic_matrix)
-
+    
         logger.debug(
             "Built transition matrices for {} topics", len(self.topic_matrices)
         )
