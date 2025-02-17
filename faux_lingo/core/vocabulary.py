@@ -22,7 +22,7 @@ class VocabConfig:
     tokens_per_rune: int
     runes_per_char: int
     chars_per_word: int
-    
+
     def validate(self) -> None:
         """Validate configuration parameters."""
         if self.token_vocab_size < 1:
@@ -33,23 +33,23 @@ class VocabConfig:
             raise ValueError("runes_per_char must be positive")
         if self.chars_per_word < 1:
             raise ValueError("chars_per_word must be positive")
-            
+
         # Calculate maximum possible combinations at each level
-        max_runes = self.token_vocab_size ** self.tokens_per_rune
+        max_runes = self.token_vocab_size**self.tokens_per_rune
         if self.rune_vocab_size > max_runes:
             raise ValueError(
                 f"rune_vocab_size ({self.rune_vocab_size}) exceeds maximum "
                 f"possible combinations ({max_runes})"
             )
-            
-        max_chars = self.rune_vocab_size ** self.runes_per_char
+
+        max_chars = self.rune_vocab_size**self.runes_per_char
         if self.char_vocab_size > max_chars:
             raise ValueError(
                 f"char_vocab_size ({self.char_vocab_size}) exceeds maximum "
                 f"possible combinations ({max_chars})"
             )
-            
-        max_words = self.char_vocab_size ** self.chars_per_word
+
+        max_words = self.char_vocab_size**self.chars_per_word
         if self.word_vocab_size > max_words:
             raise ValueError(
                 f"word_vocab_size ({self.word_vocab_size}) exceeds maximum "
