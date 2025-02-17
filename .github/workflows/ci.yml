@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,6 +17,7 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
+        ref: ${{ github.head_ref }}
     
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -50,17 +55,22 @@ jobs:
         mypy faux_lingo --pretty --show-error-codes --apply || true
         
     - name: Commit formatting changes
+      if: github.event_name == 'pull_request'
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git diff --quiet || (git add . && git commit -m "Apply automatic formatting and type fixes" && git push)
+        if ! git diff --quiet; then
+          git add .
+          git commit -m "Apply automatic formatting and type fixes"
+          git push origin HEAD:${{ github.head_ref }}
+        fi
         
     - name: Run tests
       run: |
         pytest --cov
         
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v3
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
 
   torch-tests:
     runs-on: ubuntu-latest
