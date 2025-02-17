@@ -5,11 +5,17 @@ PyTorch dataset wrappers for synthetic language generation.
 """
 
 from typing import Dict, Tuple
-import torch
-from torch.utils.data import Dataset, IterableDataset
 from loguru import logger
 
 from ..core.generator import DocumentGenerator
+
+try:
+    import torch  # type: ignore
+    from torch.utils.data import Dataset, IterableDataset  # type: ignore
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 
 class GenerativeCorpusDataset(Dataset):
     """
