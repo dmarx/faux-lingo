@@ -1,10 +1,11 @@
 # Tests in faux_lingo/tests/test_topics.py
 """Tests for topic vector space functionality."""
 
-import pytest
-import torch
 from pathlib import Path
 from typing import TypeAlias
+
+import pytest
+import torch
 
 from faux_lingo.core.topics import TopicVectorSpace
 
