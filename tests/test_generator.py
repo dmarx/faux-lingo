@@ -3,6 +3,7 @@
 """Tests for the document generation system."""
 
 from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -11,9 +12,9 @@ from faux_lingo.core.generator import (
     DocumentGenerator,
     GeneratorConfig,
 )
-from faux_lingo.core.vocabulary import VocabConfig
 from faux_lingo.core.graph import GraphConfig
 from faux_lingo.core.topics import TopicConfig
+from faux_lingo.core.vocabulary import VocabConfig
 
 
 @pytest.fixture
@@ -186,7 +187,7 @@ def test_document_entropy_computation(small_config):
     # Check entropy measures
     assert entropy >= 0
     assert perplexity >= 1
-    assert np.isclose(perplexity, 2 ** entropy)
+    assert np.isclose(perplexity, 2**entropy)
 
 
 def test_deterministic_document_generation(small_config):
