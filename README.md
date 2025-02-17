@@ -281,4 +281,4 @@ The system exhibits a rate-distortion tradeoff:
    ```
    τ* = argmin_τ [D(τ) + βR(τ)]
    ```
-   where β controls the rate-distortion tradeoff# Mathematical Appendix
+   where β controls the rate-distortion tradeoff
