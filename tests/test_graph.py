@@ -4,7 +4,9 @@
 
 import numpy as np
 import pytest
+
 from faux_lingo.core.graph import ColoredGraph, GraphConfig
+
 
 def test_graph_config_validation():
     """Test that GraphConfig validates parameters correctly."""
@@ -15,41 +17,26 @@ def test_graph_config_validation():
         vocab_size=10,
         sigma=1.0,
         epsilon=0.1,
-        random_color_transitions=False
+        random_color_transitions=False,
     )
     config.validate()  # Should not raise
 
     # Invalid: negative number of colors
     with pytest.raises(ValueError, match="num_colors must be positive"):
-        GraphConfig(
-            num_colors=-1,
-            avg_degree=2,
-            vocab_size=10
-        ).validate()
+        GraphConfig(num_colors=-1, avg_degree=2, vocab_size=10).validate()
 
     # Invalid: average degree exceeds number of colors
     with pytest.raises(ValueError, match="avg_degree cannot exceed number of colors"):
-        GraphConfig(
-            num_colors=2,
-            avg_degree=3,
-            vocab_size=10
-        ).validate()
+        GraphConfig(num_colors=2, avg_degree=3, vocab_size=10).validate()
 
     # Invalid: vocabulary size too small
     with pytest.raises(ValueError, match="vocab_size must be at least num_colors"):
-        GraphConfig(
-            num_colors=5,
-            avg_degree=2,
-            vocab_size=3
-        ).validate()
+        GraphConfig(num_colors=5, avg_degree=2, vocab_size=3).validate()
+
 
 def test_color_assignment():
     """Test assignment of colors to words."""
-    config = GraphConfig(
-        num_colors=3,
-        avg_degree=2,
-        vocab_size=10
-    )
+    config = GraphConfig(num_colors=3, avg_degree=2, vocab_size=10)
     graph = ColoredGraph(config, seed=42)
     graph.assign_colors()
 
@@ -60,6 +47,7 @@ def test_color_assignment():
     # Check at least one word of each color exists
     assert len(set(graph.word_colors.values())) == 3
 
+
 def test_color_transition_matrix():
     """Test generation of color transition matrix."""
     config = GraphConfig(
@@ -68,7 +56,7 @@ def test_color_transition_matrix():
         vocab_size=10,
         random_color_transitions=True,
         sigma=1.0,
-        epsilon=0.1
+        epsilon=0.1,
     )
     graph = ColoredGraph(config, seed=42)
     graph.assign_colors()
@@ -81,13 +69,10 @@ def test_color_transition_matrix():
     # Check all probabilities are non-negative
     assert np.all(graph.color_matrix >= 0)
 
+
 def test_transition_matrix_properties():
     """Test properties of generated transition matrix."""
-    config = GraphConfig(
-        num_colors=3,
-        avg_degree=2,
-        vocab_size=10
-    )
+    config = GraphConfig(num_colors=3, avg_degree=2, vocab_size=10)
     graph = ColoredGraph(config, seed=42)
     graph.build()
 
@@ -102,13 +87,14 @@ def test_transition_matrix_properties():
     # Check sparsity - each row should have at most avg_degree nonzero entries
     assert all(np.count_nonzero(row) <= config.avg_degree for row in T)
 
+
 def test_color_constrained_transitions():
     """Test that transitions follow color constraints."""
     config = GraphConfig(
         num_colors=3,
         avg_degree=2,
         vocab_size=10,
-        random_color_transitions=False  # Use uniform color transitions
+        random_color_transitions=False,  # Use uniform color transitions
     )
     graph = ColoredGraph(config, seed=42)
     graph.build()
@@ -123,18 +109,16 @@ def test_color_constrained_transitions():
             # Check targets have different colors
             assert len(set(target_colors)) == len(target_colors)
 
+
 def test_deterministic_generation():
     """Test that setting a seed produces deterministic results."""
     config = GraphConfig(
-        num_colors=3,
-        avg_degree=2,
-        vocab_size=10,
-        random_color_transitions=True
+        num_colors=3, avg_degree=2, vocab_size=10, random_color_transitions=True
     )
-    
+
     graph1 = ColoredGraph(config, seed=42)
     result1 = graph1.build()
-    
+
     graph2 = ColoredGraph(config, seed=42)
     result2 = graph2.build()
 
@@ -142,13 +126,10 @@ def test_deterministic_generation():
     assert np.array_equal(graph1.transition_matrix, graph2.transition_matrix)
     assert np.array_equal(graph1.color_matrix, graph2.color_matrix)
 
+
 def test_steady_state_distribution():
     """Test computation of steady state distribution."""
-    config = GraphConfig(
-        num_colors=3,
-        avg_degree=2,
-        vocab_size=10
-    )
+    config = GraphConfig(num_colors=3, avg_degree=2, vocab_size=10)
     graph = ColoredGraph(config, seed=42)
     graph.build()
 

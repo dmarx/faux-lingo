@@ -3,7 +3,9 @@
 """Tests for the vocabulary generation system."""
 
 import pytest
+
 from faux_lingo.core.vocabulary import VocabBuilder, VocabConfig
+
 
 def test_vocab_config_validation():
     """Test that VocabConfig validates parameters correctly."""
@@ -15,7 +17,7 @@ def test_vocab_config_validation():
         word_vocab_size=100,
         tokens_per_rune=1,
         runes_per_char=2,
-        chars_per_word=3
+        chars_per_word=3,
     )
     config.validate()  # Should not raise
 
@@ -28,20 +30,21 @@ def test_vocab_config_validation():
             word_vocab_size=100,
             tokens_per_rune=1,
             runes_per_char=2,
-            chars_per_word=3
+            chars_per_word=3,
         ).validate()
 
     # Invalid: rune vocabulary too large for possible combinations
     with pytest.raises(ValueError, match="rune_vocab_size .* exceeds maximum"):
         VocabConfig(
             token_vocab_size=2,  # Only 2 tokens
-            rune_vocab_size=5,   # But asking for 5 unique runes with 1 token each
+            rune_vocab_size=5,  # But asking for 5 unique runes with 1 token each
             char_vocab_size=15,
             word_vocab_size=100,
             tokens_per_rune=1,
             runes_per_char=2,
-            chars_per_word=3
+            chars_per_word=3,
         ).validate()
+
 
 def test_vocab_builder_initialization():
     """Test VocabBuilder initialization and state."""
@@ -52,7 +55,7 @@ def test_vocab_builder_initialization():
         word_vocab_size=100,
         tokens_per_rune=1,
         runes_per_char=2,
-        chars_per_word=3
+        chars_per_word=3,
     )
     builder = VocabBuilder(config, seed=42)
 
@@ -64,6 +67,7 @@ def test_vocab_builder_initialization():
     assert len(builder._used_chars) == 0
     assert len(builder._used_words) == 0
 
+
 def test_token_vocab_generation():
     """Test generation of base token vocabulary."""
     config = VocabConfig(
@@ -73,13 +77,14 @@ def test_token_vocab_generation():
         word_vocab_size=100,
         tokens_per_rune=1,
         runes_per_char=2,
-        chars_per_word=3
+        chars_per_word=3,
     )
     builder = VocabBuilder(config, seed=42)
     builder.build_token_vocab()
 
     assert len(builder.token_vocab) == 5
     assert builder.token_vocab == [0, 1, 2, 3, 4]
+
 
 def test_rune_vocab_generation():
     """Test generation of rune vocabulary."""
@@ -90,7 +95,7 @@ def test_rune_vocab_generation():
         word_vocab_size=100,
         tokens_per_rune=2,  # Each rune is 2 tokens
         runes_per_char=2,
-        chars_per_word=3
+        chars_per_word=3,
     )
     builder = VocabBuilder(config, seed=42)
     builder.build_token_vocab()
@@ -104,6 +109,7 @@ def test_rune_vocab_generation():
     # Check all tokens in runes are valid
     assert all(all(0 <= t < 3 for t in rune) for rune in builder.rune_vocab)
 
+
 def test_full_vocabulary_build():
     """Test complete vocabulary building process."""
     config = VocabConfig(
@@ -113,7 +119,7 @@ def test_full_vocabulary_build():
         word_vocab_size=2,
         tokens_per_rune=1,
         runes_per_char=2,
-        chars_per_word=2
+        chars_per_word=2,
     )
     builder = VocabBuilder(config, seed=42)
     vocab = builder.build()
@@ -137,6 +143,7 @@ def test_full_vocabulary_build():
         # All tokens should be valid
         assert all(0 <= t < 3 for t in word)
 
+
 def test_deterministic_generation():
     """Test that setting a seed produces deterministic results."""
     config = VocabConfig(
@@ -146,12 +153,12 @@ def test_deterministic_generation():
         word_vocab_size=2,
         tokens_per_rune=1,
         runes_per_char=2,
-        chars_per_word=2
+        chars_per_word=2,
     )
-    
+
     builder1 = VocabBuilder(config, seed=42)
     vocab1 = builder1.build()
-    
+
     builder2 = VocabBuilder(config, seed=42)
     vocab2 = builder2.build()
 

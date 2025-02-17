@@ -4,6 +4,7 @@
 
 import tempfile
 from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -12,9 +13,10 @@ from faux_lingo.core.generator import (
     DocumentGenerator,
     GeneratorConfig,
 )
-from faux_lingo.core.vocabulary import VocabConfig
 from faux_lingo.core.graph import GraphConfig
 from faux_lingo.core.topics import TopicConfig
+from faux_lingo.core.vocabulary import VocabConfig
+
 
 @pytest.fixture
 def small_config():
@@ -27,7 +29,7 @@ def small_config():
             word_vocab_size=10,
             tokens_per_rune=1,
             runes_per_char=2,
-            chars_per_word=2
+            chars_per_word=2,
         ),
         graph_config=GraphConfig(
             num_colors=3,
@@ -35,14 +37,11 @@ def small_config():
             vocab_size=10,
             sigma=1.0,
             epsilon=0.1,
-            random_color_transitions=False
+            random_color_transitions=False,
         ),
-        topic_config=TopicConfig(
-            num_topics=2,
-            modes_per_color=1,
-            attachment_bias=0.5
-        )
+        topic_config=TopicConfig(num_topics=2, modes_per_color=1, attachment_bias=0.5),
     )
+
 
 def test_generator_config_validation(small_config):
     """Test configuration validation."""
@@ -57,7 +56,7 @@ def test_generator_config_validation(small_config):
             word_vocab_size=10,
             tokens_per_rune=1,
             runes_per_char=2,
-            chars_per_word=2
+            chars_per_word=2,
         ),
         graph_config=GraphConfig(
             num_colors=3,
@@ -65,12 +64,13 @@ def test_generator_config_validation(small_config):
             vocab_size=20,  # Mismatched with word_vocab_size
             sigma=1.0,
             epsilon=0.1,
-            random_color_transitions=False
+            random_color_transitions=False,
         ),
-        topic_config=small_config.topic_config
+        topic_config=small_config.topic_config,
     )
     with pytest.raises(ValueError, match="Vocabulary size mismatch"):
         bad_config.validate()
+
 
 def test_artifact_generation(small_config):
     """Test generation of all artifacts."""
@@ -79,9 +79,16 @@ def test_artifact_generation(small_config):
 
     # Check all required artifacts are present
     required_artifacts = {
-        "token_vocab", "rune_vocab", "char_vocab", "word_vocab",
-        "word_colors", "transition_matrix", "color_matrix",
-        "topic_modes", "topic_matrices", "topic_distributions"
+        "token_vocab",
+        "rune_vocab",
+        "char_vocab",
+        "word_vocab",
+        "word_colors",
+        "transition_matrix",
+        "color_matrix",
+        "topic_modes",
+        "topic_matrices",
+        "topic_distributions",
     }
     assert all(key in artifacts for key in required_artifacts)
 
@@ -92,6 +99,7 @@ def test_artifact_generation(small_config):
     # Check transition matrices
     assert len(artifacts["topic_matrices"]) == small_config.topic_config.num_topics
     assert len(artifacts["topic_distributions"]) == small_config.topic_config.num_topics
+
 
 def test_artifact_serialization(small_config, tmp_path):
     """Test saving and loading of artifacts."""
@@ -111,6 +119,7 @@ def test_artifact_serialization(small_config, tmp_path):
         else:
             assert artifacts[key] == loaded_generator.artifacts[key]
 
+
 def test_document_generation(small_config):
     """Test generation of individual documents."""
     # Generate artifacts
@@ -123,12 +132,12 @@ def test_document_generation(small_config):
         doc_topic_alpha=0.5,
         include_whitespace=True,
         include_markers=True,
-        seed=42
+        seed=42,
     )
 
     # Generate a document
     doc = doc_gen.generate(doc_length=5)
-    
+
     # Check it's a valid numpy array
     assert isinstance(doc, np.ndarray)
     assert doc.dtype == np.int64
@@ -137,6 +146,7 @@ def test_document_generation(small_config):
     if doc_gen.include_markers:
         assert doc[0] == doc_gen.BOD_TOKEN
         assert doc[-1] == doc_gen.EOD_TOKEN
+
 
 def test_document_entropy_computation(small_config):
     """Test entropy computation during document generation."""
@@ -150,7 +160,7 @@ def test_document_entropy_computation(small_config):
         doc_topic_alpha=0.5,
         include_whitespace=True,
         include_markers=True,
-        seed=42
+        seed=42,
     )
 
     # Generate a document with entropy measures
@@ -159,7 +169,8 @@ def test_document_entropy_computation(small_config):
     # Check entropy measures
     assert entropy >= 0
     assert perplexity >= 1
-    assert np.isclose(perplexity, 2 ** entropy)
+    assert np.isclose(perplexity, 2**entropy)
+
 
 def test_deterministic_document_generation(small_config):
     """Test that document generation is deterministic with fixed seed."""
@@ -177,6 +188,7 @@ def test_deterministic_document_generation(small_config):
 
     # Check they're identical
     assert np.array_equal(doc1, doc2)
+
 
 def test_document_token_validity(small_config):
     """Test that generated documents contain valid tokens."""
