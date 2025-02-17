@@ -289,63 +289,126 @@ def generate_artifacts(
 # Document Generation via Transition Traversal
 ##############################
 
-def generate_document(doc_length, artifacts, doc_topic_alpha,
-                      include_whitespace=True, include_bod=True, include_eod=True):
-    """
-    Generate one document as a PyTorch tensor of tokens by traversing a topic's transition matrix.
+# def generate_document(doc_length, artifacts, doc_topic_alpha,
+#                       include_whitespace=True, include_bod=True, include_eod=True):
+#     """
+#     Generate one document as a PyTorch tensor of tokens by traversing a topic's transition matrix.
     
-    Procedure:
-      1. Sample a document-level topic mixture (Dirichlet with parameter doc_topic_alpha).
-      2. Select one topic for the document.
-      3. For that topic, traverse its transition matrix (T_topic) to generate a Markov chain:
-         - Sample the first word from the topic's stationary distribution.
-         - Then, for each subsequent word, sample the next word using the current word's row in T_topic.
-      4. Convert the sequence of word indices into a flattened sequence of tokens using the word vocabulary.
-      5. Optionally, insert WS_TOKEN between words and add BOD/EOD markers.
-    """
+#     Procedure:
+#       1. Sample a document-level topic mixture (Dirichlet with parameter doc_topic_alpha).
+#       2. Select one topic for the document.
+#       3. For that topic, traverse its transition matrix (T_topic) to generate a Markov chain:
+#          - Sample the first word from the topic's stationary distribution.
+#          - Then, for each subsequent word, sample the next word using the current word's row in T_topic.
+#       4. Convert the sequence of word indices into a flattened sequence of tokens using the word vocabulary.
+#       5. Optionally, insert WS_TOKEN between words and add BOD/EOD markers.
+#     """
+#     num_topics = artifacts["num_topics"]
+#     topics = artifacts["topics"]      # Stationary distributions for each topic
+#     T_topics = artifacts["T_topics"]    # Corresponding transition matrices
+#     word_vocab = artifacts["word_vocab"]
+    
+#     # 1. Sample document-level topic mixture.
+#     doc_topic_mixture = np.random.dirichlet([doc_topic_alpha] * num_topics)
+#     # 2. Select one topic for the document.
+#     topic_idx = np.random.choice(num_topics, p=doc_topic_mixture)
+#     T_topic = T_topics[topic_idx]
+#     stationary = topics[topic_idx]
+    
+#     vocab_size = len(word_vocab)
+#     # 3. Traverse the transition matrix to generate a chain of word indices.
+#     current_word = np.random.choice(vocab_size, p=stationary)
+#     word_indices = [current_word]
+#     for _ in range(doc_length - 1):
+#         row = T_topic[current_word]
+#         if row.sum() == 0:
+#             next_word = np.random.choice(vocab_size, p=stationary)
+#         else:
+#             next_word = np.random.choice(vocab_size, p=row)
+#         word_indices.append(next_word)
+#         current_word = next_word
+    
+#     # 4. Convert word indices into a sequence of tokens.
+#     tokens = []
+#     WS_TOKEN = -3
+#     if include_whitespace:
+#         for i, word_idx in enumerate(word_indices):
+#             tokens.extend(word_vocab[word_idx])
+#             if i < len(word_indices) - 1:
+#                 tokens.append(WS_TOKEN)
+#     else:
+#         for word_idx in word_indices:
+#             tokens.extend(word_vocab[word_idx])
+    
+#     # 5. Add BOD and EOD tokens if desired.
+#     if include_bod:
+#         tokens.insert(0, -1)
+#     if include_eod:
+#         tokens.append(-2)
+#     return torch.tensor(tokens, dtype=torch.long)
+
+
+
+def generate_document_with_entropy(doc_length, artifacts, doc_topic_alpha,
+                                   include_whitespace=True, include_bod=True, include_eod=True):
     num_topics = artifacts["num_topics"]
-    topics = artifacts["topics"]      # Stationary distributions for each topic
-    T_topics = artifacts["T_topics"]    # Corresponding transition matrices
+    topics = artifacts["topics"]      # stationary distributions for each topic
+    T_topics = artifacts["T_topics"]    # corresponding transition matrices
     word_vocab = artifacts["word_vocab"]
     
     # 1. Sample document-level topic mixture.
     doc_topic_mixture = np.random.dirichlet([doc_topic_alpha] * num_topics)
-    # 2. Select one topic for the document.
     topic_idx = np.random.choice(num_topics, p=doc_topic_mixture)
     T_topic = T_topics[topic_idx]
     stationary = topics[topic_idx]
     
     vocab_size = len(word_vocab)
-    # 3. Traverse the transition matrix to generate a chain of word indices.
+    # 2. Initialize by sampling the first word from the stationary distribution.
     current_word = np.random.choice(vocab_size, p=stationary)
     word_indices = [current_word]
+    
+    # Initialize entropy accumulator.
+    total_neg_log_prob = 0.0
+    # Include the probability for the first word.
+    total_neg_log_prob += -np.log2(stationary[current_word] + 1e-12)
+    
+    # 3. Traverse the transition matrix to generate a chain of word indices.
     for _ in range(doc_length - 1):
         row = T_topic[current_word]
+        # In case of a row that sums to zero, fallback to stationary distribution.
         if row.sum() == 0:
-            next_word = np.random.choice(vocab_size, p=stationary)
+            p_dist = stationary
         else:
-            next_word = np.random.choice(vocab_size, p=row)
+            p_dist = row
+        # Sample the next word.
+        next_word = np.random.choice(vocab_size, p=p_dist)
         word_indices.append(next_word)
+        # Accumulate negative log probability.
+        total_neg_log_prob += -np.log2(p_dist[next_word] + 1e-12)
         current_word = next_word
     
-    # 4. Convert word indices into a sequence of tokens.
+    # 4. Compute average entropy (bits per word).
+    avg_entropy = total_neg_log_prob / doc_length
+    perplexity = 2 ** avg_entropy
+
+    # 5. Convert word indices to tokens.
     tokens = []
     WS_TOKEN = -3
-    if include_whitespace:
-        for i, word_idx in enumerate(word_indices):
-            tokens.extend(word_vocab[word_idx])
-            if i < len(word_indices) - 1:
-                tokens.append(WS_TOKEN)
-    else:
-        for word_idx in word_indices:
-            tokens.extend(word_vocab[word_idx])
-    
-    # 5. Add BOD and EOD tokens if desired.
+    for i, word_idx in enumerate(word_indices):
+        tokens.extend(word_vocab[word_idx])
+        if include_whitespace and i < len(word_indices) - 1:
+            tokens.append(WS_TOKEN)
     if include_bod:
         tokens.insert(0, -1)
     if include_eod:
         tokens.append(-2)
-    return torch.tensor(tokens, dtype=torch.long)
+    
+    # Return both the document tensor and the computed entropy/perplexity.
+    doc_tensor = torch.tensor(tokens, dtype=torch.long)
+    return doc_tensor, avg_entropy, perplexity
+
+def generate_document(**kwargs):
+    return generate_document_with_entropy(**kwargs)[0]
 
 ##############################
 # PyTorch Dataset Wrapper
