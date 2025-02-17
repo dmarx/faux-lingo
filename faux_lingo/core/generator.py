@@ -95,9 +95,14 @@ class ArtifactGenerator:
             if isinstance(artifact, np.ndarray):
                 np.save(directory / f"{name}.npy", artifact)
             elif isinstance(artifact, dict):
-                # Save dictionaries as JSON to preserve structure
+                # Save dictionaries with type information
+                typed_dict = {
+                    "type": "dict",
+                    "key_type": "int" if all(isinstance(k, int) for k in artifact.keys()) else "str",
+                    "data": {str(k): v for k, v in artifact.items()}
+                }
                 with open(directory / f"{name}.json", "w") as f:
-                    json.dump(artifact, f)
+                    json.dump(typed_dict, f)
             elif isinstance(artifact, (list, tuple)):
                 np.save(directory / f"{name}.npy", np.array(artifact, dtype=object))
     
@@ -119,7 +124,17 @@ class ArtifactGenerator:
                 generator.artifacts[name] = np.load(path, allow_pickle=True)
             elif path.suffix == ".json":
                 with open(path) as f:
-                    generator.artifacts[name] = json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict) and "type" in data and data["type"] == "dict":
+                        # Convert keys back to original type
+                        if data["key_type"] == "int":
+                            generator.artifacts[name] = {
+                                int(k): v for k, v in data["data"].items()
+                            }
+                        else:
+                            generator.artifacts[name] = data["data"]
+                    else:
+                        generator.artifacts[name] = data
     
         logger.info("Loaded artifacts from {}", directory)
         return generator
