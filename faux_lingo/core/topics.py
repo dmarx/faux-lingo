@@ -107,7 +107,7 @@ class TopicModel:
             self.topic_modes.append(mode_dict)
 
         logger.debug("Sampled mode words for {} topics", len(self.topic_modes))
-        
+
     def build_topic_matrices(self) -> None:
         """
         Generate topic-specific transition matrices by applying small random
@@ -115,30 +115,32 @@ class TopicModel:
         """
         if not self.topic_modes:
             raise RuntimeError("Topic modes must be sampled first")
-    
+
         self.topic_matrices = []
-        epsilon = self.config.attachment_bias  # Use attachment_bias as perturbation scale
-    
+        epsilon = (
+            self.config.attachment_bias
+        )  # Use attachment_bias as perturbation scale
+
         for topic_idx, mode_dict in enumerate(self.topic_modes):
             # Get sparsity pattern from base matrix
             nonzero_mask = self.base_matrix > 0
-    
+
             # Generate random perturbation matrix with same sparsity
             perturbation = self._np_rng.rand(*self.base_matrix.shape)
             perturbation = perturbation * nonzero_mask  # Apply sparsity mask
             perturbation = perturbation / perturbation.sum(axis=1, keepdims=True)
             perturbation = np.nan_to_num(perturbation)  # Handle zero rows
-    
+
             # Combine base matrix with perturbation
             topic_matrix = (1 - epsilon) * self.base_matrix + epsilon * perturbation
-    
+
             # Ensure it's still row-stochastic
             row_sums = topic_matrix.sum(axis=1, keepdims=True)
             mask = row_sums > 0
             topic_matrix[mask] = topic_matrix[mask] / row_sums[mask]
-    
+
             self.topic_matrices.append(topic_matrix)
-    
+
         logger.debug(
             "Built transition matrices for {} topics", len(self.topic_matrices)
         )
