@@ -3,7 +3,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int # noqa: F722
 
 
 @dataclass
