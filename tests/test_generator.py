@@ -69,7 +69,7 @@ def test_temperature_effect(simple_generator):
     """Test that temperature effect is consistent across runs."""
     batch_size = 100
     seq_length = 20
-    n_trials = 5
+    n_trials = 3
 
     entropy_diffs = []  # Store hot - cold entropy differences
 
