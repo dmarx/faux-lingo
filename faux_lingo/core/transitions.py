@@ -79,8 +79,6 @@ class TransitionMatrix:
 
         # Convert to transition matrix
         # Each row i is the topic distribution masked by valid transitions from token i
-        batch_size = topic_mixture.shape[0]
-
         # Expand base probabilities to transition matrix shape
         transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
 
@@ -88,23 +86,19 @@ class TransitionMatrix:
         color_mask = self.color_space.get_transition_mask()
         transitions = transitions * color_mask
 
-        # Apply temperature BEFORE normalization
-        if temperature != 1.0:
-            transitions = transitions.div(temperature)
-
-        # Apply minimum probability where transitions are allowed
+        # Set minimum probability for valid transitions
         transitions = torch.where(
             color_mask > 0,
             torch.maximum(transitions, torch.tensor(min_prob, device=self.device)),
             transitions,
         )
 
-        # Apply temperature scaling using softmax
+        # Apply temperature scaling to logits before normalization
         if temperature != 1.0:
             transitions = transitions / temperature
 
-        # Normalize rows to get proper probability distributions
-        # Add small epsilon to avoid division by zero
+        # Normalize each row to get proper probability distributions
+        # Small epsilon to avoid division by zero
         row_sums = transitions.sum(dim=-1, keepdim=True) + 1e-10
         transitions = transitions / row_sums
 
