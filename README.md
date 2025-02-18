@@ -580,3 +580,254 @@ The configuration system validates:
 4. Device availability
 
 Configuration errors include detailed messages explaining the validation failure and suggested fixes.
+
+# Mathematics and Code Correlation
+
+## 1. Topic Space
+
+### Mathematical Definition
+A topic space consists of T orthonormal vectors in ℝᵛ where V is the vocabulary size.
+
+**Topic Vector Properties**:
+- Unit length: ‖vi‖₂ = 1
+- Orthogonality: vi · vj = 0 for i ≠ j
+
+### Code Implementation
+In `core/topics.py`:
+```python
+class TopicVectorSpace:
+    def _validate_vectors(self, vectors: torch.Tensor) -> None:
+        # Check unit length
+        norms = torch.linalg.norm(vectors, dim=1)
+        if not torch.allclose(norms, torch.ones_like(norms)):
+            raise ValueError("Topic vectors must have unit length")
+
+        # Check orthogonality
+        gram = vectors @ vectors.T
+        should_be_identity = torch.eye(self.n_topics, device=vectors.device)
+        if not torch.allclose(gram, should_be_identity, atol=1e-6):
+            raise ValueError("Topic vectors must be orthogonal")
+```
+
+### Distribution Generation
+**Math**: p = Σ(wᵢvᵢ) for i = 1 to T
+
+**Code**:
+```python
+def get_distribution(self, mixture: torch.Tensor) -> torch.Tensor:
+    """Project mixture onto topic vectors."""
+    return mixture @ self.vectors
+```
+
+## 2. Color-Constrained Transitions
+
+### Mathematical Definition
+For token distribution p and color transition matrix M:
+P(j|i) = p(j) * M(c(i),c(j)) / Z(i)
+
+where Z(i) = Σ(p(j) * M(c(i),c(j))) is the normalization factor.
+
+### Code Implementation
+In `core/transitions.py`:
+```python
+class TransitionMatrix:
+    def generate(
+        self,
+        topic_mixture: torch.Tensor,
+        temperature: float = 1.0,
+        min_prob: float = 1e-6,
+    ) -> torch.Tensor:
+        # Get base distributions from topics
+        base_probs = self.topic_space.get_distribution(topic_mixture)
+
+        # Convert to transition matrix
+        transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
+
+        # Apply color mask
+        color_mask = self.color_space.get_transition_mask()
+        transitions = transitions * color_mask
+
+        # Set minimum probability for valid transitions
+        transitions = torch.where(
+            color_mask > 0,
+            torch.maximum(transitions, torch.tensor(min_prob)),
+            transitions
+        )
+
+        # Normalize probabilities
+        row_sums = transitions.sum(dim=-1, keepdim=True) + 1e-10
+        transitions = transitions / row_sums
+```
+
+### Color Space Implementation
+In `core/colors.py`:
+```python
+class ColorSpace:
+    def get_transition_mask(self) -> torch.Tensor:
+        """Create vocabulary-sized mask from color transitions."""
+        mask = torch.zeros(
+            (self.vocab_size, self.vocab_size),
+            device=self.device
+        )
+
+        for i in range(self.n_colors):
+            i_start, i_end = self.get_color_range(i)
+            for j in range(self.n_colors):
+                j_start, j_end = self.get_color_range(j)
+                if self.transition_weights[i, j] > 0:
+                    mask[i_start:i_end, j_start:j_end] = (
+                        self.transition_weights[i, j]
+                    )
+```
+
+## 3. Entropy Calculations
+
+### Color Entropy
+**Math**: H(C) = -Σ P(j|i) log₂ P(j|i)
+
+**Code** in `analysis/entropy.py`:
+```python
+def _compute_color_entropy(self, tokens: torch.Tensor) -> float:
+    # Convert tokens to colors
+    colors = torch.tensor(
+        [[self.transition_model.color_space.get_color(idx.item())
+          for idx in seq] for seq in tokens],
+        device=self.device,
+    )
+
+    # Count transitions
+    counts = torch.zeros(
+        (self.transition_model.color_space.n_colors,
+         self.transition_model.color_space.n_colors),
+        device=self.device
+    )
+
+    for b in range(len(tokens)):
+        for t in range(len(tokens[0]) - 1):
+            curr_color = colors[b, t]
+            next_color = colors[b, t + 1]
+            counts[curr_color, next_color] += 1
+
+    # Convert to probabilities
+    row_sums = counts.sum(dim=1, keepdim=True) + 1e-10
+    P = counts / row_sums
+
+    # Compute entropy
+    H = -torch.sum(P * torch.log2(P + 1e-10), dim=1).mean()
+    return H.item()
+```
+
+### Topic Entropy
+**Math**: H(T) = -Σ w̄ᵢ log₂ w̄ᵢ
+
+**Code**:
+```python
+def _compute_topic_entropy(self, mixtures: torch.Tensor) -> float:
+    # Average topic distribution
+    P = mixtures.mean(0)
+    H = -torch.sum(P * torch.log2(P + 1e-10))
+    return H.item()
+```
+
+### Token Entropy
+**Math**: H(V) = -Σ f(v) log₂ f(v)
+
+**Code**:
+```python
+def _compute_token_entropy(self, tokens: torch.Tensor) -> float:
+    # Count frequencies
+    counts = torch.zeros(
+        self.transition_model.vocab_size,
+        device=self.device
+    )
+
+    for seq in tokens.long():
+        unique, seq_counts = torch.unique(seq, return_counts=True)
+        counts[unique] += seq_counts
+
+    # Convert to probabilities and compute entropy
+    P = counts / counts.sum()
+    H = -torch.sum(P * torch.log2(P + 1e-10))
+    return H.item()
+```
+
+## 4. Sequence Generation
+
+### Sampling Process
+**Math**: 
+1. p = Σ(wᵢvᵢ)  # Base distribution
+2. P(j|i) = p(j) * M(c(i),c(j)) / Z(i)  # Apply constraints
+3. P'(j|i) = P(j|i)^(1/T) / Z'(i)  # Temperature scaling
+
+### Code Implementation
+In `core/generator.py`:
+```python
+class SequenceGenerator:
+    def generate(
+        self,
+        batch_size: int,
+        seq_length: int,
+        temperature: float = 1.0,
+        topic_mixtures: torch.Tensor | None = None,
+        start_tokens: torch.Tensor | None = None,
+        min_prob: float = 1e-6,
+    ) -> GeneratedSequences:
+        # Get transition matrix
+        transitions = self.transition_model.generate(
+            topic_mixtures,
+            temperature=temperature,
+            min_prob=min_prob,
+        )
+
+        sequences = torch.zeros(
+            (batch_size, seq_length),
+            dtype=torch.long,
+            device=self.device
+        )
+        log_probs = torch.zeros(batch_size, device=self.device)
+
+        # Initial tokens
+        if start_tokens is None:
+            sequences[:, 0] = torch.randint(
+                0, self.vocab_size,
+                (batch_size,),
+                device=self.device
+            )
+        else:
+            sequences[:, 0] = start_tokens
+
+        # Generate sequence
+        for t in range(1, seq_length):
+            current_probs = transitions[
+                torch.arange(batch_size, device=self.device),
+                sequences[:, t - 1],
+            ]
+
+            # Sample next tokens
+            next_tokens = torch.multinomial(current_probs, 1).squeeze(-1)
+            sequences[:, t] = next_tokens
+
+            # Update log probabilities
+            log_probs += torch.log(
+                torch.gather(
+                    current_probs,
+                    1,
+                    next_tokens.unsqueeze(1),
+                )
+            ).squeeze(-1)
+```
+
+This implementation shows how:
+1. Topic vectors define the base distribution
+2. Color constraints are applied via masking
+3. Temperature scaling controls randomness
+4. Sequences are generated through sequential sampling
+
+The code carefully handles:
+- Numerical stability (adding small epsilon)
+- Efficient batch processing
+- Device placement
+- Memory management
+- Edge cases in probability distributions
+
+Each mathematical operation has corresponding validation in the code to ensure theoretical properties are maintained during computation.
