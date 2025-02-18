@@ -6,23 +6,26 @@ import torch
 
 from faux_lingo.core.vocab_mapping import VocabHierarchy, VocabLevel
 
-
 @pytest.fixture
 def simple_hierarchy():
     """Create a simple 3-level hierarchy for testing.
     
     Structure:
-    - Level 0 (tokens): 0-4
-    - Level 1 (chars): Each maps to two tokens
-    - Level 2 (words): Each maps to two chars
+    - Level 2 tokens map to 2 level 1 tokens
+    - Level 1 tokens map to 2 level 0 tokens
+    
+    Example mappings:
+    Level 2 -> Level 1:
+    - 0 -> (0, 1)
+    - 1 -> (1, 2)
+    
+    Level 1 -> Level 0:
+    - 0 -> (0, 1)
+    - 1 -> (2, 3)
+    - 2 -> (3, 4)
     """
     levels = [
-        VocabLevel(  # Base tokens
-            vocab_size=5,
-            chunk_size=1,
-            sequences={i: (i,) for i in range(5)},  # Identity mapping
-        ),
-        VocabLevel(  # Characters
+        VocabLevel(  # Level 1 -> Level 0 mapping
             vocab_size=3,
             chunk_size=2,
             sequences={
@@ -31,7 +34,7 @@ def simple_hierarchy():
                 2: (3, 4),  # char 2 -> tokens [3,4]
             },
         ),
-        VocabLevel(  # Words
+        VocabLevel(  # Level 2 -> Level 1 mapping
             vocab_size=2,
             chunk_size=2,
             sequences={
@@ -41,7 +44,6 @@ def simple_hierarchy():
         ),
     ]
     return VocabHierarchy(levels)
-
 
 def test_vocab_level_validation():
     """Test validation of vocabulary level properties."""
@@ -69,70 +71,89 @@ def test_vocab_level_validation():
     with pytest.raises(ValueError, match="must be integers"):
         VocabLevel(vocab_size=1, chunk_size=1, sequences={0: (0.5,)})
 
+def test_hierarchy_respected():
+    import torch
+    import numpy as np
+    from faux_lingo.core.vocab_builder import BuilderConfig, VocabBuilder
+    
+    config = BuilderConfig(
+        token_vocab_size=10,
+        sequence_lengths=[2, 3],  # Length at each level
+        vocab_sizes=[20, 30]      # Size of each level
+    )
+    
+    builder = VocabBuilder(config)
+    hierarchy = builder.build()
+    
+    tokens = torch.tensor([[0,1,2]])
+    decoded = hierarchy.decode_sequence(tokens,start_level=2, target_level=0)
+    
+    target_length = np.prod( [level.chunk_size for level in hierarchy.levels]) * tokens.shape[1]
+    assert target_length == decoded.shape[1]
 
 def test_single_token_decoding(simple_hierarchy):
     """Test decoding of individual tokens."""
-    # Decode from word to chars
+    # Level 2 token 0 maps to level 1 tokens [0,1]
+    # which map to level 0 tokens [0,1,2,3]
     word = torch.tensor([[0]], device=simple_hierarchy.device)
+    
+    # Decode from level 2 to level 1
     chars = simple_hierarchy.decode_sequence(word, start_level=2, target_level=1)
     assert torch.equal(chars, torch.tensor([[0, 1]], device=simple_hierarchy.device))
-
-    # Decode from word to tokens
+    
+    # Decode from level 2 to level 0
     tokens = simple_hierarchy.decode_sequence(word, start_level=2, target_level=0)
-    assert torch.equal(
-        tokens, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device)
-    )
+    assert torch.equal(tokens, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device))
 
 
 def test_sequence_decoding(simple_hierarchy):
     """Test decoding of token sequences."""
-    # Decode sequence of words
+    # Level 2 sequence [0,1] maps to:
+    # Level 1: [0,1,1,2]
+    # Level 0: [0,1,2,3,2,3,3,4]
     words = torch.tensor([[0, 1]], device=simple_hierarchy.device)
+    
+    # Decode sequence from level 2 to level 1
     chars = simple_hierarchy.decode_sequence(words, start_level=2, target_level=1)
-    assert torch.equal(
-        chars, torch.tensor([[0, 1, 1, 2]], device=simple_hierarchy.device)
-    )
-
+    assert torch.equal(chars, torch.tensor([[0, 1, 1, 2]], device=simple_hierarchy.device))
+    
+    # Decode sequence from level 2 to level 0
     tokens = simple_hierarchy.decode_sequence(words, start_level=2, target_level=0)
-    assert torch.equal(
-        tokens,
-        torch.tensor([[0, 1, 2, 3, 2, 3, 3, 4]], device=simple_hierarchy.device),
-    )
+    assert torch.equal(tokens, 
+        torch.tensor([[0, 1, 2, 3, 2, 3, 3, 4]], device=simple_hierarchy.device))
 
 
 def test_batch_decoding(simple_hierarchy):
     """Test decoding of batched sequences."""
-    words = torch.tensor(
-        [
-            [0, 1],  # First sequence
-            [1, 0],  # Second sequence
-        ],
-        device=simple_hierarchy.device,
-    )
+    words = torch.tensor([
+        [0, 1],  # First sequence: word 0 followed by word 1
+        [1, 0],  # Second sequence: word 1 followed by word 0
+    ], device=simple_hierarchy.device)
+    
+    # First sequence: [0,1] -> [0,1,1,2] -> [0,1,2,3,2,3,3,4]
+    # Second sequence: [1,0] -> [1,2,0,1] -> [2,3,3,4,0,1,2,3]
     tokens = simple_hierarchy.decode_sequence(words, start_level=2, target_level=0)
-
-    expected = torch.tensor(
-        [
-            [0, 1, 2, 3, 2, 3, 3, 4],  # Decoded first sequence
-            [2, 3, 3, 4, 0, 1, 2, 3],  # Decoded second sequence
-        ],
-        device=simple_hierarchy.device,
-    )
+    
+    expected = torch.tensor([
+        [0, 1, 2, 3, 2, 3, 3, 4],  # Decoded first sequence
+        [2, 3, 3, 4, 0, 1, 2, 3],  # Decoded second sequence
+    ], device=simple_hierarchy.device)
+    
     assert torch.equal(tokens, expected)
 
 
 def test_invalid_level_decoding(simple_hierarchy):
     """Test validation of decoding levels."""
     words = torch.tensor([[0]], device=simple_hierarchy.device)
-
-    # Invalid start level
+    
+    # Invalid start level (too high)
     with pytest.raises(ValueError, match="Invalid start_level"):
         simple_hierarchy.decode_sequence(words, start_level=3, target_level=0)
-
-    # Invalid target level
+        
+    # Invalid target level (negative)
     with pytest.raises(ValueError, match="Invalid target_level"):
         simple_hierarchy.decode_sequence(words, start_level=2, target_level=-1)
-
+    
     # Can't decode upward
     with pytest.raises(ValueError, match="Can only decode to same or lower levels"):
         simple_hierarchy.decode_sequence(words, start_level=0, target_level=1)
