@@ -158,16 +158,33 @@ def test_from_sequences():
 
 def test_device_handling():
     """Test device placement and movement of tensors."""
-    level = VocabLevel(vocab_size=2, chunk_size=1, sequences={0: (0,), 1: (1,)})
-    hierarchy = VocabHierarchy([level], device="cpu")
+    # Create two-level hierarchy for testing
+    levels = [
+        VocabLevel(  # Base tokens
+            vocab_size=2,
+            chunk_size=1,
+            sequences={0: (0,), 1: (1,)},
+        ),
+        VocabLevel(  # Higher level tokens
+            vocab_size=2,
+            chunk_size=2,
+            sequences={0: (0, 1), 1: (1, 0)},
+        ),
+    ]
+    hierarchy = VocabHierarchy(levels, device="cpu")
 
-    # Test with actual decoding to ensure device handling
-    tokens = torch.tensor([[0, 1]], device="cpu")
+    # Test decoding maintains device
+    tokens = torch.tensor([[0]], device="cpu")
     result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
+    assert result.device.type == "cpu"
+
+    # Test with same level returns input unchanged
+    tokens = torch.tensor([[0]], device="cpu")
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
     assert result.device.type == "cpu"
 
     # Input on different device gets moved
     if torch.cuda.is_available():
-        hierarchy = VocabHierarchy([level], device="cuda")
-        result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+        hierarchy = VocabHierarchy(levels, device="cuda")
+        result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
         assert result.device.type == "cuda"
