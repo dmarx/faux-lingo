@@ -50,11 +50,11 @@ jobs:
       continue-on-error: true
       run: |
         echo "Running black..."
-        black .
+        black faux_lingo
         echo "Running isort..."
-        isort .
+        isort faux_lingo
         echo "Running ruff..."
-        ruff check --fix .
+        ruff check faux_lingo --fix .
         
     - name: Commit formatting changes
       if: github.event_name == 'pull_request'
