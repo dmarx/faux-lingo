@@ -69,6 +69,25 @@ def test_vocab_level_validation():
     with pytest.raises(ValueError, match="must be integers"):
         VocabLevel(vocab_size=1, chunk_size=1, sequences={0: (0.5,)})
 
+def test_hierarchy_respected():
+    import torch
+    import numpy as np
+    from faux_lingo.core.vocab_builder import BuilderConfig, VocabBuilder
+    
+    config = BuilderConfig(
+        token_vocab_size=10,
+        sequence_lengths=[2, 3],  # Length at each level
+        vocab_sizes=[20, 30]      # Size of each level
+    )
+    
+    builder = VocabBuilder(config)
+    hierarchy = builder.build()
+    
+    tokens = torch.tensor([[0,1,2]])
+    decoded = hierarchy.decode_sequence(tokens,start_level=1, target_level=0)
+    
+    target_length = np.prod( [level.chunk_size for level in hierarchy.levels]) * tokens.shape[1]
+    assert target_length == decoded.shape[1]
 
 def test_single_token_decoding(simple_hierarchy):
     """Test decoding of individual tokens."""
