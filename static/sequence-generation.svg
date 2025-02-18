@@ -1,0 +1,89 @@
+<svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="500" fill="#f8f9fa"/>
+  
+  <!-- Topic Community Backgrounds (using grayscale) -->
+  <g opacity="0.1">
+    <!-- Topic 1 region -->
+    <circle cx="200" cy="250" r="150" fill="#333333"/>
+    <!-- Topic 2 region -->
+    <circle cx="500" cy="180" r="130" fill="#666666"/>
+    <!-- Topic 3 region -->
+    <circle cx="600" cy="350" r="120" fill="#999999"/>
+  </g>
+
+  <!-- Edges (draw first so they're behind nodes) -->
+  <g stroke="#666" stroke-width="2">
+    <!-- Within Topic 1 -->
+    <line x1="120" y1="200" x2="180" y2="250"/>
+    <line x1="180" y1="250" x2="240" y2="300"/>
+    <line x1="240" y1="300" x2="280" y2="250"/>
+    <!-- Bridges between communities -->
+    <line x1="280" y1="250" x2="400" y2="180"/>
+    <line x1="400" y1="180" x2="480" y2="150"/>
+    <line x1="480" y1="150" x2="520" y2="200"/>
+    <line x1="520" y1="200" x2="580" y2="280"/>
+    <line x1="580" y1="280" x2="640" y2="350"/>
+  </g>
+
+  <!-- Sample path highlighting -->
+  <g stroke="#0066cc" stroke-width="4" stroke-dasharray="5,5" opacity="0.7">
+    <line x1="120" y1="200" x2="180" y2="250"/>
+    <line x1="180" y1="250" x2="240" y2="300"/>
+    <line x1="240" y1="300" x2="280" y2="250"/>
+    <line x1="280" y1="250" x2="400" y2="180"/>
+    <line x1="400" y1="180" x2="480" y2="150"/>
+    <line x1="480" y1="150" x2="520" y2="200"/>
+  </g>
+
+  <!-- Nodes (colored by transition constraints) -->
+  <g stroke="#333" stroke-width="2">
+    <!-- Topic 1 nodes -->
+    <circle cx="120" cy="200" r="15" fill="#ff6b6b"/>
+    <circle cx="180" cy="250" r="15" fill="#4ecdc4"/>
+    <circle cx="240" cy="300" r="15" fill="#ff6b6b"/>
+    <circle cx="280" cy="250" r="15" fill="#ffe66d"/>
+    
+    <!-- Topic 2 nodes -->
+    <circle cx="400" cy="180" r="15" fill="#ff6b6b"/>
+    <circle cx="480" cy="150" r="15" fill="#4ecdc4"/>
+    <circle cx="520" cy="200" r="15" fill="#ffe66d"/>
+    
+    <!-- Topic 3 nodes -->
+    <circle cx="580" cy="280" r="15" fill="#ff6b6b"/>
+    <circle cx="640" cy="350" r="15" fill="#4ecdc4"/>
+  </g>
+
+  <!-- Topic Labels -->
+  <g font-family="Arial" font-size="14" fill="#333">
+    <text x="150" y="150">Topic Community 1</text>
+    <text x="450" y="100">Topic Community 2</text>
+    <text x="600" y="450">Topic Community 3</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(20, 420)">
+    <!-- Color constraint legend -->
+    <text x="0" y="0" font-family="Arial" font-size="12" font-weight="bold">Color Classes:</text>
+    <circle cx="20" cy="20" r="8" fill="#ff6b6b"/>
+    <text x="35" y="25" font-family="Arial" font-size="12">Class 1</text>
+    <circle cx="100" cy="20" r="8" fill="#4ecdc4"/>
+    <text x="115" y="25" font-family="Arial" font-size="12">Class 2</text>
+    <circle cx="180" cy="20" r="8" fill="#ffe66d"/>
+    <text x="195" y="25" font-family="Arial" font-size="12">Class 3</text>
+    
+    <!-- Topic community legend -->
+    <text x="300" y="0" font-family="Arial" font-size="12" font-weight="bold">Topic Communities:</text>
+    <rect x="320" y="10" width="20" height="20" fill="#333333" opacity="0.1"/>
+    <text x="345" y="25" font-family="Arial" font-size="12">Topic 1</text>
+    <rect x="400" y="10" width="20" height="20" fill="#666666" opacity="0.1"/>
+    <text x="425" y="25" font-family="Arial" font-size="12">Topic 2</text>
+    <rect x="480" y="10" width="20" height="20" fill="#999999" opacity="0.1"/>
+    <text x="505" y="25" font-family="Arial" font-size="12">Topic 3</text>
+  </g>
+
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">
+    Sequence Generation: Graph Traversal with Color Constraints and Topic Structure
+  </text>
+</svg>
