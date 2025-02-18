@@ -84,7 +84,7 @@ def test_hierarchy_respected():
     hierarchy = builder.build()
     
     tokens = torch.tensor([[0,1,2]])
-    decoded = hierarchy.decode_sequence(tokens,start_level=1, target_level=0)
+    decoded = hierarchy.decode_sequence(tokens,start_level=2, target_level=0)
     
     target_length = np.prod( [level.chunk_size for level in hierarchy.levels]) * tokens.shape[1]
     assert target_length == decoded.shape[1]
