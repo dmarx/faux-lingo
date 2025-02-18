@@ -5,6 +5,7 @@ from typing import TypeAlias
 
 import torch
 from typing_extensions import Self
+from jaxtyping import Float  # noqa: F722
 
 from .colors import ColorSpace
 from .topics import TopicVectorSpace
@@ -77,34 +78,36 @@ class TransitionMatrix:
         # Get base distributions from topics
         base_probs = self.topic_space.get_distribution(topic_mixture)
 
-        # Apply temperature
-        if temperature != 1.0:
-            base_probs = base_probs / temperature
-
-        # Get color transition mask
-        color_mask = self.color_space.get_transition_mask()
-
         # Convert to transition matrix
         # Each row i is the topic distribution masked by valid transitions from token i
         batch_size = topic_mixture.shape[0]
 
         # Expand base probabilities to transition matrix shape
         transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
-
+        
         # Apply color mask to enforce transition constraints
         transitions = transitions * color_mask
+
+        # Apply temperature BEFORE normalization
+        if temperature != 1.0:
+            transitions = transitions.div(temperature)
 
         # Apply minimum probability where transitions are allowed
         transitions = torch.where(
             color_mask > 0,
-            torch.maximum(transitions, torch.tensor(min_prob, device=self.device)),
+            torch.maximum(
+                transitions, torch.tensor(min_prob, device=self.device)
+            ),
             transitions,
         )
 
+        # Apply temperature scaling using softmax
+        if temperature != 1.0:
+            transitions = transitions / temperature
+            
         # Normalize rows to get proper probability distributions
         # Add small epsilon to avoid division by zero
-        eps = 1e-10
-        row_sums = transitions.sum(dim=-1, keepdim=True) + eps
+        row_sums = transitions.sum(dim=-1, keepdim=True) + 1e-10
         transitions = transitions / row_sums
 
         return transitions
