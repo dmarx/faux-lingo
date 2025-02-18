@@ -1,507 +1,391 @@
-# Synthetic Sequence Generator
+# FauxLingo Documentation
 
-A PyTorch-based generator for creating synthetic sequences with controlled topic and transition structure. This tool allows generation of token sequences that respect both global topic distributions and local transition constraints.
+## User Guide
 
-## Features
+### 1. Introduction
 
-- Generate sequences with controlled topic mixtures
-- Color-based token classes with customizable transition rules
-- GPU-accelerated batch sequence generation
-- Serializable language parameters
-- Type-safe tensor operations with jaxtyping
+FauxLingo is a powerful toolkit for generating structured token sequences with controlled properties. It combines topic-based generation with color-based constraints to produce sequences that exhibit specific statistical and structural patterns.
 
-## Installation
+#### Key Features and Capabilities
+- Hierarchical vocabulary system with multiple abstraction levels
+- Topic-based sequence generation with controlled mixing
+- Color-based constraints for structural patterns
+- Information-theoretic analysis tools
+- Extensible augmentation system for sequence variants
+- Robust serialization for long-running generations
 
-```bash
-pip install torch jaxtyping tensorizer
-pip install -e .
+#### Common Use Cases
+- Generating synthetic training data with controlled properties
+- Testing sequence processing systems
+- Studying information-theoretic properties of structured sequences
+- Prototyping language models with controlled vocabularies
+
+### 2. Getting Started
+
+#### Basic Concepts
+
+##### Tokens and Vocabularies
+FauxLingo organizes tokens into hierarchical vocabularies. A token is the basic unit of sequence generation, and tokens can be organized into higher-level structures. For example:
+```python
+# Create a simple word-level hierarchy
+hierarchy = create_word_hierarchy(
+    token_vocab_size=10,  # Base tokens (0-9)
+    n_chars=20,          # Number of character-level tokens
+    n_words=100,         # Number of word-level tokens
+    chars_per_word=3     # Characters per word
+)
 ```
 
-## Quick Start
+##### Colors and Topics
+- Colors are classes that partition the token vocabulary and control transition patterns
+- Topics are basis vectors that define token distributions
+- Together they create structured yet flexible sequence generation
 
+##### Sequence Generation
+Basic sequence generation combines topic mixtures with color constraints:
 ```python
-import torch
-from prob_color_gen import ProbColorConstrainedGenerator
+generator = SequenceGenerator.create_uniform(
+    vocab_size=100,
+    n_topics=3,
+    color_fractions=[0.3, 0.3, 0.4]
+)
 
-# Define language structure
-color_fractions = [3, 5, 2]  # Will normalize to [0.3, 0.5, 0.2]
-color_transitions = torch.tensor([
-    [1.0, 0.5, 0.1],  # Strong self-transitions
-    [0.4, 1.0, 0.7],  # Moderate cross-transitions
-    [0.2, 0.6, 1.0]   # Varied transition strengths
-])
+sequences = generator.generate(
+    batch_size=32,
+    seq_length=20,
+    temperature=1.0
+)
+```
 
+#### Quick Start Tutorial
+1. Install FauxLingo:
+   ```bash
+   pip install fauxlingo
+   ```
+
+2. Create a simple generator:
+   ```python
+   from faux_lingo import SequenceGenerator
+   
+   generator = SequenceGenerator.create_uniform(
+       vocab_size=10,
+       n_topics=2,
+       color_fractions=[0.5, 0.5]
+   )
+   ```
+
+3. Generate sequences:
+   ```python
+   sequences = generator.generate(
+       batch_size=4,
+       seq_length=10
+   )
+   ```
+
+4. Analyze results:
+   ```python
+   from faux_lingo.analysis import EntropyAnalyzer
+   
+   analyzer = EntropyAnalyzer(generator.transition_model)
+   metrics = analyzer.analyze_sequences(sequences)
+   print(f"Token entropy: {metrics.token_entropy:.2f}")
+   ```
+
+#### Common Use Patterns
+- Generate -> Analyze -> Adjust -> Repeat
+- Build vocabulary -> Generate sequences -> Export
+- Load existing -> Augment -> Generate variants
+
+### 3. Core Components
+
+#### 3.1 Vocabulary System
+
+##### Understanding Vocabulary Hierarchy
+The vocabulary system organizes tokens into levels:
+```
+Level 2 (Words):    [Word_0] [Word_1] ...
+                      ↓         ↓
+Level 1 (Chars):  [C_0,C_1] [C_2,C_3] ...
+                    ↓   ↓     ↓   ↓
+Level 0 (Tokens): [0,1,2] [3,4,5] ...
+```
+
+##### Creating Custom Vocabularies
+```python
+from faux_lingo.core.vocab_builder import BuilderConfig, VocabBuilder
+
+config = BuilderConfig(
+    token_vocab_size=10,
+    sequence_lengths=[2, 3],  # Length at each level
+    vocab_sizes=[20, 30]      # Size of each level
+)
+
+builder = VocabBuilder(config)
+hierarchy = builder.build()
+```
+
+##### Multiple Mappings and Variants
+Support for multiple sequences mapping to the same token:
+```python
+from faux_lingo.core.vocab_extensions import (
+    AugmentationConfig,
+    SequenceAugmenter,
+    convert_to_multi_mapping
+)
+
+augmenter = SequenceAugmenter(
+    vocab_size=10,
+    config=AugmentationConfig(
+        deletion_prob=0.1,
+        insertion_prob=0.1
+    )
+)
+
+multi_hierarchy = convert_to_multi_mapping(
+    hierarchy,
+    augmenter=augmenter,
+    n_variants=3
+)
+```
+
+##### Best Practices for Vocabulary Design
+- Keep hierarchy levels focused and logical
+- Balance vocabulary sizes between levels
+- Consider sequence length impact on combinations
+- Use meaningful partitioning for colors
+
+#### 3.2 Generation System
+
+##### Basic Sequence Generation
+```python
+# Simple generation with default settings
+sequences = generator.generate(
+    batch_size=32,
+    seq_length=20
+)
+
+# Control randomness with temperature
+sequences = generator.generate(
+    batch_size=32,
+    seq_length=20,
+    temperature=0.8  # Lower = more deterministic
+)
+```
+
+##### Topic-based Generation
+```python
+# Generate with specific topic mixture
+topic_mixture = torch.tensor([[0.7, 0.3]])  # Favor first topic
+sequences = generator.generate(
+    batch_size=1,
+    seq_length=20,
+    topic_mixtures=topic_mixture
+)
+```
+
+##### Color Constraints
+```python
+# Generate sequences starting with specific color
+sequences = generator.generate_with_color(
+    batch_size=32,
+    seq_length=20,
+    start_color=1  # Start with second color class
+)
+```
+
+#### 3.3 Analysis Tools
+
+##### Entropy Metrics
+```python
+analyzer = EntropyAnalyzer(generator.transition_model)
+metrics = analyzer.analyze_sequences(sequences)
+
+print(f"Color entropy: {metrics.color_entropy:.2f}")
+print(f"Topic entropy: {metrics.topic_entropy:.2f}")
+print(f"Token entropy: {metrics.token_entropy:.2f}")
+```
+
+##### Sequence Analysis
+```python
+# Get color sequences
+dataset = SequenceDataset(generator, config)
+color_seqs = dataset.get_color_sequences(sequences.tokens)
+
+# Get batch statistics
+stats = dataset.get_batch_stats(sequences)
+print(f"Mean log probability: {stats['mean_log_prob']:.2f}")
+print(f"Color distribution: {stats['color_counts']}")
+```
+
+### 4. Advanced Usage
+
+#### Configuration System
+```python
+from faux_lingo.core.serialization import GenerationMetadata
+from omegaconf import OmegaConf
+
+# Create configuration
+config = OmegaConf.create({
+    "generation": {
+        "batch_size": 32,
+        "seq_length": 20,
+        "temperature": 0.8
+    },
+    "vocab": {
+        "token_size": 100,
+        "n_topics": 3,
+        "color_fractions": [0.3, 0.3, 0.4]
+    }
+})
+
+# Create metadata container
+metadata = GenerationMetadata(
+    config=config,
+    vocab_hierarchy=hierarchy,
+    transition_model=generator.transition_model
+)
+```
+
+#### Serialization and State Management
+```python
+# Save state
+metadata.save(Path("generation_state"))
+
+# Load state
+metadata = GenerationMetadata.load(
+    Path("generation_state"),
+    device="cuda"
+)
+```
+
+#### Augmentation System
+```python
+config = AugmentationConfig(
+    deletion_prob=0.1,
+    insertion_prob=0.1,
+    substitution_prob=0.1,
+    transposition_prob=0.1
+)
+
+augmenter = SequenceAugmenter(
+    vocab_size=100,
+    config=config
+)
+
+# Augment sequence
+sequence = (0, 1, 2, 3)
+variant = augmenter.augment_sequence(sequence)
+```
+
+### 5. Examples
+
+#### Basic Examples
+
+##### Simple Vocabulary Creation
+```python
+# Create word-level hierarchy
+hierarchy = create_word_hierarchy(
+    token_vocab_size=10,
+    n_chars=20,
+    n_words=100,
+    chars_per_word=3
+)
+```
+
+##### Basic Generation
+```python
 # Create generator
-generator = ProbColorConstrainedGenerator(
-    n_topics=10,        # Number of topics
-    vocab_size=1000,    # Vocabulary size
-    color_fractions=color_fractions,
-    color_transitions=color_transitions
+generator = SequenceGenerator.create_uniform(
+    vocab_size=100,
+    n_topics=3,
+    color_fractions=[0.3, 0.3, 0.4]
 )
 
 # Generate sequences
-sequences, mixtures = generator.sample_sequences(
-    batch_size=32,      # Number of sequences
-    seq_length=100,     # Length of each sequence
-    temperature=0.8     # Controls randomness
-)
-
-# Save language for later use
-generator.save_language("my_language.tensors")
-```
-
-## Detailed Usage
-
-### Topic Mixtures
-
-Topic mixtures control the global distribution of tokens. You can specify exact mixtures:
-
-```python
-specific_mixture = torch.tensor([
-    [0.4, 0.3, 0.2, 0.1] + [0.0] * 6  # Focus on first 4 topics
-]).repeat(32, 1)  # Batch size of 32
-
-sequences, mixtures = generator.sample_sequences(
+sequences = generator.generate(
     batch_size=32,
-    seq_length=100,
-    mixtures=specific_mixture
+    seq_length=20
 )
 ```
 
-### Color Transitions
-
-Colors represent token classes with controlled transition probabilities. The transition matrix determines allowed transitions:
-
+##### Analysis Examples
 ```python
-# Example: Three color classes
-color_transitions = torch.tensor([
-    [1.0, 0.5, 0.0],  # Color 0 can't transition to color 2
-    [0.4, 1.0, 0.7],  # Color 1 can transition to all colors
-    [0.0, 0.6, 1.0]   # Color 2 can't transition to color 0
+# Analyze entropy
+analyzer = EntropyAnalyzer(generator.transition_model)
+metrics = analyzer.analyze_sequences(sequences)
+
+# Get batch statistics
+dataset = SequenceDataset(generator, config)
+stats = dataset.get_batch_stats(sequences)
+```
+
+#### Advanced Examples
+
+##### Complex Hierarchies
+```python
+# Multi-level hierarchy with custom configuration
+config = BuilderConfig(
+    token_vocab_size=10,
+    sequence_lengths=[2, 3, 2],  # Three levels
+    vocab_sizes=[20, 30, 15]     # Sizes at each level
+)
+
+builder = VocabBuilder(config)
+hierarchy = builder.build()
+```
+
+##### Custom Constraints
+```python
+# Create custom color transition weights
+weights = torch.tensor([
+    [1.0, 0.5, 0.0],  # Color 0 transitions
+    [0.5, 1.0, 0.5],  # Color 1 transitions
+    [0.0, 0.5, 1.0]   # Color 2 transitions
 ])
+
+color_space = ColorSpace(
+    color_fractions=[0.3, 0.3, 0.4],
+    vocab_size=100,
+    transition_weights=weights
+)
 ```
 
-### Serialization
-
-Save and load language parameters to reproduce exact sequences:
-
+##### Integration Examples
 ```python
-# Save language
-generator.save_language("my_language.tensors")
-
-# Load language
-loaded_generator = ProbColorConstrainedGenerator.load_language(
-    "my_language.tensors"
-)
-
-# Generate with same topic mixtures
-new_sequences, _ = loaded_generator.sample_sequences(
-    batch_size=32,
-    mixtures=mixtures  # Reuse previous mixtures
-)
+# Integrate with training loop
+for epoch in range(n_epochs):
+    for batch in SequenceDataset(generator, config):
+        # Process batch
+        tokens = batch.tokens
+        topic_mixtures = batch.topic_mixtures
+        log_probs = batch.log_probs
+        
+        # Training step
+        loss = model(tokens, topic_mixtures)
+        loss.backward()
 ```
 
-## How It Works
+### 6. Troubleshooting
 
-The sequence generation process involves three main stages:
+#### Common Error Messages
 
-```mermaid
-graph TD
-    subgraph Setup["Initial Setup"]
-        A[/"Color Fractions<br>[0.3, 0.5, 0.2]"/] --> B[Vocabulary Ranges]
-        C[/"Color Transitions<br>Matrix (3x3)"/] --> D[Block Transition Mask]
-        E[/"Topic Vectors<br>(k × vocab_size)"/] --> F[Orthonormal Basis]
-    end
+1. "Vocab size mismatch":
+   - Check that vocabulary sizes match between components
+   - Verify color space and topic space use same vocab size
 
-    subgraph Generation["Matrix Generation"]
-        G[/"Topic Mixtures<br>(batch × k)"/] --> H[Diagonal λ Matrices]
-        F --> I[Matrix Construction<br>M = QΛQᵀ]
-        H --> I
-        D --> J[Apply Transition Mask]
-        I --> J
-        J --> K[Normalize Rows]
-    end
+2. "Invalid topic mixture":
+   - Ensure topic mixtures sum to 1.0
+   - Check batch dimension matches requested batch size
 
-    subgraph Sampling["Sequence Sampling"]
-        K --> L[Sample Initial Tokens]
-        L --> M[Current Token States]
-        M --> N[Get Transition Probs]
-        N --> O[Sample Next Tokens]
-        O --> |Repeat|M
-    end
-```
+3. "Transition weights shape mismatch":
+   - Verify transition weight matrix matches number of colors
+   - Check that weights are non-negative
 
-1. **Setup Phase**:
-   - Color fractions determine vocabulary partitioning
-   - Color transitions expanded to full vocabulary mask
-   - Topic vectors form orthonormal basis for mixing
+4. "Sequence probabilities do not sum to 1":
+   - In multi-mapping, check variant probabilities sum to 1.0
+   - Verify normalization in transition matrices
 
-2. **Matrix Generation**:
-   - Sample or specify topic mixtures
-   - Construct transition matrices via QΛQᵀ
-   - Apply color transition constraints
-   - Normalize to get probability matrices
-
-3. **Sequence Sampling**:
-   - Sample initial tokens (optionally by color)
-   - For each position:
-     * Get transition probabilities for current tokens
-     * Sample next tokens from these distributions
-     * Update current states and repeat
-
-## Mathematical Details
-
-### Topic Space Construction
-
-1. **Topic Vectors**: 
-   - Q ∈ ℝ^(k×v) where k is number of topics, v is vocabulary size
-   - Q is orthonormal: QQᵀ = I
-   - Each row qᵢ represents a topic distribution over vocabulary
-
-2. **Topic Mixtures**:
-   - λ ∈ ℝ^k for each sequence, where Σᵢλᵢ = 1
-   - Λ = diag(λ) forms diagonal matrix of mixture weights
-   - For batch b, we have Λ ∈ ℝ^(b×k×k)
-
-3. **Base Transition Matrix**:
-   - M = QΛQᵀ gives raw transition probabilities
-   - Each row mᵢ represents transition distribution from token i
-   - M ∈ ℝ^(b×v×v) for batch size b
-
-### Color Constraints
-
-1. **Color Fractions**:
-   - f ∈ ℝ^c where c is number of colors and Σᵢfᵢ = 1
-   - Vocabulary ranges: rᵢ = [⌊Σⱼ₍₌₁..ᵢ₋₁₎fⱼv⌋, ⌊Σⱼ₍₌₁..ᵢ₎fⱼv⌋]
-
-2. **Color Transitions**:
-   - T ∈ ℝ^(c×c) where Tᵢⱼ ≥ 0
-   - Tᵢⱼ represents relative strength of transitions from color i to j
-   - Zero entries enforce forbidden transitions
-
-3. **Block Mask Construction**:
-   - W ∈ ℝ^(v×v) constructed from T
-   - Wᵤᵥ = Tᵢⱼ where u ∈ rᵢ, v ∈ rⱼ
-   - Final transitions: P = normalize(M ⊙ W)
-
-### Sequence Generation
-
-For batch size b and sequence length s:
-
-1. **Initial State**:
-   - x₀ ∈ ℕ^b sampled uniformly or from specified color range
-   - P ∈ ℝ^(b×v×v) is batch of transition matrices
-
-2. **Token Generation**:
-   - For t = 1 to s:
-     * pₜ = P[batch_idx, xₜ₋₁] gets transition probs
-     * xₜ ∼ Categorical(pₜ) samples next tokens
-   - Final sequences X ∈ ℕ^(b×s)
-
-3. **Probability Properties**:
-   - Row stochastic: Σⱼpᵢⱼ = 1 ∀i
-   - Block structure: pᵢⱼ = 0 if colors i,j forbidden
-   - Respects topic mixtures: E[pᵢⱼ] reflects λ
-
-## Technical Details
-
-### Tensor Dimensions
-
-- `batch`: Number of sequences/matrices being generated
-- `seq_len`: Length of generated sequences
-- `vocab_size`: Total number of possible tokens
-- `num_topics`: Number of topics in latent space
-- `num_colors`: Number of color classes
-
-### Key Shapes
-
-- `color_fractions: [num_colors]`
-- `color_transitions: [num_colors, num_colors]`
-- `topic_vectors: [num_topics, vocab_size]`
-- `topic_mixtures: [batch, num_topics]`
-- `sequences: [batch, seq_len]`
-- `transition_matrices: [batch, vocab_size, vocab_size]`
-
-
-# Mathematical Appendix
-
-## 1. Matrix Structure Visualizations
-
-### 1.1 Block Structure of Transition Matrix
-
-```mermaid
-graph TD
-    subgraph TransitionMatrix["Full Transition Matrix P"]
-        subgraph B11["Color 1 → 1<br>T₁₁W"]
-            C11[Dense Block]
-        end
-        subgraph B12["Color 1 → 2<br>T₁₂W"]
-            C12[Dense Block]
-        end
-        subgraph B13["Color 1 → 3<br>T₁₃W"]
-            C13[Zero Block]
-        end
-        subgraph B21["Color 2 → 1<br>T₂₁W"]
-            C21[Dense Block]
-        end
-        subgraph B22["Color 2 → 2<br>T₂₂W"]
-            C22[Dense Block]
-        end
-        subgraph B23["Color 2 → 3<br>T₂₃W"]
-            C23[Dense Block]
-        end
-        subgraph B31["Color 3 → 1<br>T₃₁W"]
-            C31[Zero Block]
-        end
-        subgraph B32["Color 3 → 2<br>T₃₂W"]
-            C32[Dense Block]
-        end
-        subgraph B33["Color 3 → 3<br>T₃₃W"]
-            C33[Dense Block]
-        end
-    end
-
-    style TransitionMatrix fill:#f9f9f9,stroke:#666
-    classDef zero fill:#f0f0f0,stroke:#999
-    classDef dense fill:#e1f5fe,stroke:#01579b
-    class C13,C31 zero
-    class C11,C12,C21,C22,C23,C32,C33 dense
-```
-
-Each block represents transitions between color classes. Zero blocks (grayed out) show forbidden transitions.
-
-## 2. Property Proofs
-
-### 2.1 Orthonormality Preservation
-
-**Theorem 1:** The base transition matrix M = QΛQᵀ preserves probability structure when Q is orthonormal and Λ is diagonal with Σᵢλᵢ = 1.
-
-**Proof:**
-1. Row sums of M:
-   ```
-   Σⱼ Mᵢⱼ = Σⱼ (QΛQᵀ)ᵢⱼ
-           = Σⱼ Σₖ qᵢₖλₖqⱼₖ
-           = Σₖ λₖ(qᵢₖΣⱼqⱼₖ)
-           = Σₖ λₖqᵢₖ · 0     (orthonormality of Q)
-           = 1
-   ```
-
-2. Non-negativity is ensured by the ReLU operation before normalization.
-
-### 2.2 Topic Mixture Preservation
-
-**Theorem 2:** Expected token frequencies in generated sequences reflect the topic mixture weights.
-
-**Proof:**
-Let πₜ be the stationary distribution of P. Then:
-1. πₜP = πₜ
-2. For topic mixture λ:
-   ```
-   E[token_freq] ∝ Σᵢ λᵢqᵢ
-   ```
-3. This proportionality is maintained through the color constraints due to the block structure and normalization.
-
-## 3. Structural Properties
-
-### 3.1 Color Block Sizes
-
-For vocabulary size v and color fractions f = [f₁, ..., fₖ]:
-
-```mermaid
-graph LR
-    A[Vocab Start] --> B[Color 1<br>size: ⌊f₁v⌋]
-    B --> C[Color 2<br>size: ⌊f₂v⌋]
-    C --> D[...<br>...]
-    D --> E[Color k<br>size: v - Σᵢ₌₁ᵏ⁻¹⌊fᵢv⌋]
-```
-
-### 3.2 Topic Vector Structure
-
-Topic vectors form an orthonormal basis in ℝᵛ:
-
-```mermaid
-graph TD
-    subgraph TopicSpace["Topic Vector Space"]
-        T1[Topic 1] --- T2[Topic 2]
-        T2 --- T3[Topic 3]
-        T1 --- T3
-        T4[Topic k] --- T1
-        T4 --- T2
-        T4 --- T3
-    end
-
-    style TopicSpace fill:#f0f7ff,stroke:#666
-```
-
-Each vector qᵢ:
-- Has unit norm: ||qᵢ||₂ = 1
-- Is orthogonal to all other topics: qᵢᵀqⱼ = 0, i ≠ j
-- Spans a dimension in token probability space
-
-## 4. Sampling Properties
-
-### 4.1 Temperature Effects
-
-Temperature τ modifies transition probabilities:
-```
-P(τ) = normalize(ReLU(M/τ) ⊙ W)
-```
-
-Effects:
-- τ → 0: Approaches deterministic transitions
-- τ → ∞: Approaches uniform distribution over allowed transitions
-- τ = 1: Raw topic-induced probabilities
-
-### 4.2 Color Transition Dynamics
-
-Given color transition matrix T:
-```mermaid
-graph LR
-    C1((Color 1)) -->|T₁₁| C1
-    C1 -->|T₁₂| C2((Color 2))
-    C2 -->|T₂₁| C1
-    C2 -->|T₂₂| C2
-    C2 -->|T₂₃| C3((Color 3))
-    C3 -->|T₃₂| C2
-    C3 -->|T₃₃| C3
-```
-
-Long-term color frequencies depend on:
-1. Transition matrix structure
-2. Topic mixture weights
-3. Block sizes from color fractions
-
-## 5. Statistical Properties
-
-### 5.1 Entropy Analysis
-
-For a transition matrix P, the entropy of transitions from state i is:
-```
-H(i) = -Σⱼ Pᵢⱼ log Pᵢⱼ
-```
-
-This leads to bounds on sequence entropy:
-```
-H_min ≤ H(sequence) ≤ min(H_color + H_topic, log(v))
-```
-where:
-- H_min depends on color constraints
-- H_color is entropy from color transitions
-- H_topic is entropy from topic mixture
-
-## 6. Information-Theoretic Analysis
-
-### 6.1 Entropy Decomposition
-
-The total entropy of generated sequences can be decomposed into several components:
-
-1. **Transition Entropy**:
-   ```
-   H(transitions) = -Σᵢ Σⱼ Pᵢⱼ log Pᵢⱼ
-   ```
-   - Measures uncertainty in next-token prediction
-   - Upper bounded by log(vocab_size)
-   - Modified by temperature parameter τ
-
-2. **Color-Level Entropy**:
-   ```
-   H(colors) = -Σᵢ Σⱼ P(cᵢ→cⱼ) log P(cᵢ→cⱼ)
-   ```
-   - Coarser-grained than transition entropy
-   - Determined by color transition matrix
-   - Lower bound on sequence entropy
-
-3. **Topic Mixture Entropy**:
-   ```
-   H(topics) = -Σᵢ λᵢ log λᵢ
-   ```
-   - Measures diversity in topic usage
-   - Independent of temperature
-   - Affects global token distribution
-
-### 6.2 Mutual Information Structure
-
-The generated sequences exhibit several important mutual information relationships:
-
-1. **Topics and Colors**: I(T;C)
-   ```mermaid
-   graph LR
-       T((Topics)) --> C((Colors))
-       T --> K((Tokens))
-       C --> K
-   ```
-   - Topics influence color transitions
-   - Color constraints modify topic effects
-   - I(T;C) ≤ min(H(T), H(C))
-
-2. **Sequential Dependencies**:
-   ```
-   I(Xₜ; Xₜ₊ₖ) = H(Xₜ₊ₖ) - H(Xₜ₊ₖ|Xₜ)
-   ```
-   - Decays with distance k
-   - Modified by color constraints
-   - Bounded by transition entropy
-
-### 6.3 Temperature Effects on Entropy
-
-Temperature τ modifies the entropy structure:
-
-1. **Low Temperature** (τ → 0):
-   - H(transitions) → 0
-   - Deterministic paths
-   - I(Xₜ; Xₜ₊₁) → H(Xₜ)
-
-2. **High Temperature** (τ → ∞):
-   - H(transitions) → log(allowed_transitions)
-   - Maximum entropy within constraints
-   - I(Xₜ; Xₜ₊₁) → 0
-
-3. **Optimal Temperature**:
-   - Balances exploration and structure
-   - Preserves topic influence
-   - Maintains color constraints
-
-### 6.4 Entropy Bounds
-
-Several important bounds constrain the entropy:
-
-1. **Lower Bound**:
-   ```
-   H(sequence) ≥ max(H(colors), H(topics))
-   ```
-   - Cannot generate less entropy than constraints
-
-2. **Upper Bound**:
-   ```
-   H(sequence) ≤ min(log(vocab_size), H(colors) + H(topics))
-   ```
-   - Limited by vocabulary size
-   - Limited by combined constraints
-
-3. **Mutual Information Bounds**:
-   ```
-   I(tokens; topics) ≤ min(H(tokens), H(topics))
-   I(tokens; colors) ≤ min(H(tokens), H(colors))
-   ```
-   - Information processing inequalities
-   - Modified by temperature
-
-### 6.5 Rate-Distortion Analysis
-
-The system exhibits a rate-distortion tradeoff:
-
-1. **Rate**: Information content of sequences
-   ```
-   R(τ) = H(sequence|τ)
-   ```
-
-2. **Distortion**: Deviation from target distribution
-   ```
-   D(τ) = KL(P_target || P_generated)
-   ```
-
-3. **Optimal Temperature**:
-   ```
-   τ* = argmin_τ [D(τ) + βR(τ)]
-   ```
-   where β controls the rate-distortion tradeoff
+For additional support and resources:
+- Check the GitHub repository
+- Review test cases for examples
+- File issues for bugs or feature requests
