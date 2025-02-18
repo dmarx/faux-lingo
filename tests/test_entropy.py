@@ -48,12 +48,8 @@ def test_transition_entropy(simple_analyzer, sample_sequences):
     assert metrics.transition_entropy >= 0
 
     # Test with different temperatures
-    cold_metrics = simple_analyzer.analyze_sequences(
-        sample_sequences, temperature=0.1
-    )
-    hot_metrics = simple_analyzer.analyze_sequences(
-        sample_sequences, temperature=10.0
-    )
+    cold_metrics = simple_analyzer.analyze_sequences(sample_sequences, temperature=0.1)
+    hot_metrics = simple_analyzer.analyze_sequences(sample_sequences, temperature=10.0)
 
     # Higher temperature should give higher entropy
     assert hot_metrics.transition_entropy > cold_metrics.transition_entropy
@@ -88,11 +84,7 @@ def test_topic_entropy(simple_analyzer):
 
     metrics = simple_analyzer.analyze_sequences(sequences)
     expected = torch.log2(torch.tensor(2.0))  # log2(num_topics)
-    assert torch.isclose(
-        torch.tensor(metrics.topic_entropy),
-        expected,
-        atol=1e-6
-    )
+    assert torch.isclose(torch.tensor(metrics.topic_entropy), expected, atol=1e-6)
 
     # Test with deterministic mixture
     det_mix = torch.zeros(4, 2)
