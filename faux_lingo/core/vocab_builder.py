@@ -38,7 +38,7 @@ class BuilderConfig:
             raise ValueError(
                 "Must specify sequence length and vocabulary size for each level"
             )
-        if any(l < 1 for l in self.sequence_lengths):
+        if any(length < 1 for length in self.sequence_lengths):
             raise ValueError("All sequence lengths must be positive")
         if any(v < 1 for v in self.vocab_sizes):
             raise ValueError("All vocabulary sizes must be positive")
