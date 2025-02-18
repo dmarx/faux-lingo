@@ -831,3 +831,324 @@ The code carefully handles:
 - Edge cases in probability distributions
 
 Each mathematical operation has corresponding validation in the code to ensure theoretical properties are maintained during computation.
+
+---
+
+# Mathematics and Code Correlation
+
+## 1. Topic Space and Vector Basis
+
+### Theoretical Foundation
+The topic space is constructed as a low-dimensional representation of token distributions using orthonormal vectors. This approach is grounded in:
+
+1. **Linear Subspace Theory**:
+   - Topics form a T-dimensional subspace of ℝᵛ
+   - Any token distribution is a convex combination of topic vectors
+   - Linear independence ensures unique representations
+
+2. **Gram-Schmidt Process**:
+   For topic vectors {vᵢ}, the orthonormalization process:
+   ```
+   ṽ₁ = v₁
+   ṽᵢ = vᵢ - Σⱼ₌₁ⁱ⁻¹ proj_ṽⱼ(vᵢ)
+   vᵢ' = ṽᵢ/‖ṽᵢ‖
+   ```
+   where proj_u(v) = (u·v)/(u·u)u
+
+3. **Basis Properties**:
+   - Completeness: span{vᵢ} covers allowed distributions
+   - Parsimony: minimal basis for required expressivity
+   - Interpretability: each vector represents distinct pattern
+
+### Geometric Interpretation
+The topic simplex is formed by:
+- Vertices: pure topic distributions
+- Edges: binary topic mixtures
+- Interior: general topic mixtures
+
+This structure ensures:
+- Non-negative probabilities
+- Proper normalization
+- Continuous interpolation between topics
+
+### Code Implementation
+In `core/topics.py`:
+```python
+class TopicVectorSpace:
+    def _validate_vectors(self, vectors: torch.Tensor) -> None:
+        # Check unit length
+        norms = torch.linalg.norm(vectors, dim=1)
+        if not torch.allclose(norms, torch.ones_like(norms)):
+            raise ValueError("Topic vectors must have unit length")
+
+        # Check orthogonality
+        gram = vectors @ vectors.T
+        should_be_identity = torch.eye(self.n_topics, device=vectors.device)
+        if not torch.allclose(gram, should_be_identity, atol=1e-6):
+            raise ValueError("Topic vectors must be orthogonal")
+```
+
+### Distribution Generation
+**Math**: p = Σ(wᵢvᵢ) for i = 1 to T
+
+**Code**:
+```python
+def get_distribution(self, mixture: torch.Tensor) -> torch.Tensor:
+    """Project mixture onto topic vectors."""
+    return mixture @ self.vectors
+```
+
+## 2. Color-Constrained Transitions and Markov Properties
+
+### Theoretical Framework
+
+1. **Markov Chain Structure**:
+   - State space: S = {1,...,V} (vocabulary tokens)
+   - Transition kernel: P(j|i) with color constraints
+   - Stationary distribution: π satisfying πP = π
+
+2. **Block Structure**:
+   The transition matrix has block form:
+   ```
+   P = [P₁₁ P₁₂ ... P₁ₖ]
+       [P₂₁ P₂₂ ... P₂ₖ]
+       [  ...........   ]
+       [Pₖ₁ Pₖ₂ ... Pₖₖ]
+   ```
+   where Pᵢⱼ represents transitions from color i to color j
+
+3. **Constraint Properties**:
+   For colors c(i), c(j):
+   - Block sparsity: P(j|i) = 0 if M(c(i),c(j)) = 0
+   - Block scaling: P(j|i) ∝ M(c(i),c(j))
+   - Row normalization: ΣⱼP(j|i) = 1
+
+4. **Ergodicity Conditions**:
+   - Irreducibility: M allows paths between all colors
+   - Aperiodicity: diagonal M entries positive
+   - Positive recurrence: finite state space
+
+### Code Implementation
+In `core/transitions.py`:
+```python
+class TransitionMatrix:
+    def generate(
+        self,
+        topic_mixture: torch.Tensor,
+        temperature: float = 1.0,
+        min_prob: float = 1e-6,
+    ) -> torch.Tensor:
+        # Get base distributions from topics
+        base_probs = self.topic_space.get_distribution(topic_mixture)
+
+        # Convert to transition matrix
+        transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
+
+        # Apply color mask
+        color_mask = self.color_space.get_transition_mask()
+        transitions = transitions * color_mask
+
+        # Set minimum probability for valid transitions
+        transitions = torch.where(
+            color_mask > 0,
+            torch.maximum(transitions, torch.tensor(min_prob)),
+            transitions
+        )
+
+        # Normalize probabilities
+        row_sums = transitions.sum(dim=-1, keepdim=True) + 1e-10
+        transitions = transitions / row_sums
+```
+
+## 3. Information Theory and Entropy Analysis
+
+### Theoretical Framework
+
+1. **Shannon Entropy Fundamentals**:
+   For a discrete random variable X:
+   H(X) = -Σₓ P(x) log₂ P(x)
+
+   Properties:
+   - Non-negativity: H(X) ≥ 0
+   - Maximality: H uniform = log₂|X|
+   - Additivity: H(X,Y) = H(X) + H(Y|X)
+
+2. **Conditional Entropy**:
+   For color transitions:
+   H(C₂|C₁) = -Σᵢ,ⱼ P(i,j) log₂ P(j|i)
+   where:
+   - P(i,j): joint probability of colors i,j
+   - P(j|i): conditional probability
+
+3. **Mutual Information**:
+   Between colors and topics:
+   I(C;T) = H(C) - H(C|T)
+   = Σᵢ,ⱼ P(i,j) log₂(P(i,j)/(P(i)P(j)))
+
+4. **Entropy Rate**:
+   For the sequence process:
+   h = lim(n→∞) H(Xₙ|Xₙ₋₁,...,X₁)/n
+
+### Estimation Methods
+
+1. **Empirical Entropy**:
+   Ĥ = -Σᵢ (nᵢ/N) log₂(nᵢ/N)
+   where:
+   - nᵢ: count of event i
+   - N: total observations
+
+2. **Bias Correction**:
+   Miller-Madow correction:
+   Ĥ_c = Ĥ + (m-1)/(2N)
+   where m is number of non-zero counts
+
+### Code Implementation
+In `analysis/entropy.py`:
+```python
+def _compute_color_entropy(self, tokens: torch.Tensor) -> float:
+    # Convert tokens to colors
+    colors = torch.tensor(
+        [[self.transition_model.color_space.get_color(idx.item())
+          for idx in seq] for seq in tokens],
+        device=self.device,
+    )
+
+    # Count transitions
+    counts = torch.zeros(
+        (self.transition_model.color_space.n_colors,
+         self.transition_model.color_space.n_colors),
+        device=self.device
+    )
+
+    for b in range(len(tokens)):
+        for t in range(len(tokens[0]) - 1):
+            curr_color = colors[b, t]
+            next_color = colors[b, t + 1]
+            counts[curr_color, next_color] += 1
+
+    # Convert to probabilities
+    row_sums = counts.sum(dim=1, keepdim=True) + 1e-10
+    P = counts / row_sums
+
+    # Compute entropy
+    H = -torch.sum(P * torch.log2(P + 1e-10), dim=1).mean()
+    return H.item()
+```
+
+## 4. Sequence Generation and Sampling Theory
+
+### Theoretical Framework
+
+1. **Gibbs Distribution**:
+   With temperature T, probability:
+   P_T(x) = exp(-E(x)/T)/Z_T
+   where:
+   - E(x): energy function
+   - Z_T: partition function
+   - T: temperature parameter
+
+2. **Temperature Effects**:
+   Limiting behavior:
+   - T → 0: converges to mode (deterministic)
+   - T → ∞: converges to uniform
+   - T = 1: original distribution
+
+3. **Sampling Methods**:
+
+   a) **Direct Sampling**:
+      For categorical distribution P:
+      - Compute cumulative sums Sᵢ = Σⱼ≤ᵢ pⱼ
+      - Generate u ~ Uniform(0,1)
+      - Return min{i: Sᵢ > u}
+
+   b) **Gumbel-Max Trick**:
+      For logits l:
+      - Generate g ~ Gumbel(0,1)
+      - Return argmax(l + g)
+      
+   c) **Importance Sampling**:
+      When sampling from P using Q:
+      w(x) = P(x)/Q(x)
+      Ê[f(X)] = Σᵢ w(xᵢ)f(xᵢ)/Σᵢ w(xᵢ)
+
+4. **Convergence Properties**:
+
+   a) **Mixing Time**:
+      τ(ε) = min{t: ‖P^t - π‖ᵤ ≤ ε}
+      where:
+      - P^t: t-step transition matrix
+      - π: stationary distribution
+      - ‖·‖ᵤ: uniform norm
+
+   b) **Spectral Gap**:
+      γ = 1 - λ₂
+      where λ₂ is second largest eigenvalue
+
+   c) **Conductance**:
+      Φ = min{Φ(S): 0 < π(S) ≤ 1/2}
+      where Φ(S) = P(S,S^c)/π(S)
+
+### Implementation Considerations
+
+1. **Numerical Stability**:
+   - Log-space computations
+   - Softmax with temperature
+   - Epsilon for division
+
+2. **Batch Processing**:
+   - Parallel sampling
+   - Memory efficiency
+   - Device optimization
+
+3. **Variance Reduction**:
+   - Common random numbers
+   - Antithetic variates
+   - Control variates
+
+### Code Implementation
+In `core/generator.py`:
+```python
+class SequenceGenerator:
+    def generate(
+        self,
+        batch_size: int,
+        seq_length: int,
+        temperature: float = 1.0,
+        topic_mixtures: torch.Tensor | None = None,
+        start_tokens: torch.Tensor | None = None,
+        min_prob: float = 1e-6,
+    ) -> GeneratedSequences:
+        # Get transition matrix
+        transitions = self.transition_model.generate(
+            topic_mixtures,
+            temperature=temperature,
+            min_prob=min_prob,
+        )
+
+        sequences = torch.zeros(
+            (batch_size, seq_length),
+            dtype=torch.long,
+            device=self.device
+        )
+        log_probs = torch.zeros(batch_size, device=self.device)
+
+        # Generate sequence
+        for t in range(1, seq_length):
+            current_probs = transitions[
+                torch.arange(batch_size, device=self.device),
+                sequences[:, t - 1],
+            ]
+
+            # Sample next tokens
+            next_tokens = torch.multinomial(current_probs, 1).squeeze(-1)
+            sequences[:, t] = next_tokens
+
+            # Update log probabilities
+            log_probs += torch.log(
+                torch.gather(
+                    current_probs,
+                    1,
+                    next_tokens.unsqueeze(1),
+                )
+            ).squeeze(-1)
+```
