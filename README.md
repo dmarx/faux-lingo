@@ -1,4 +1,4 @@
-![](static/sequence-generation.svg)
+![FauxLingo: Simulate Syntax and Semantics](static/sequence-generation.svg)
 
 # FauxLingo
 
