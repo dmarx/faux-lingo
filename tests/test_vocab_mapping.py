@@ -11,35 +11,35 @@ def simple_hierarchy():
     """Create a simple 3-level hierarchy for testing.
     
     Structure:
-    - Level 2 tokens map to 2 level 1 tokens
-    - Level 1 tokens map to 2 level 0 tokens
+    - Level 0 (most abstract) tokens map to 2 level 1 tokens
+    - Level 1 tokens map to 2 level 2 (most concrete) tokens
     
     Example mappings:
-    Level 2 -> Level 1:
+    Level 0 -> Level 1:
     - 0 -> (0, 1)
     - 1 -> (1, 2)
     
-    Level 1 -> Level 0:
+    Level 1 -> Level 2:
     - 0 -> (0, 1)
     - 1 -> (2, 3)
     - 2 -> (3, 4)
     """
     levels = [
-        VocabLevel(  # Level 1 -> Level 0 mapping
+        VocabLevel(  # Level 0 -> Level 1 mapping
+            vocab_size=2,
+            chunk_size=2,
+            sequences={
+                0: (0, 1),  # word 0 -> chars [0,1]
+                1: (1, 2),  # word 1 -> chars [1,2]
+            },
+        ),
+        VocabLevel(  # Level 1 -> Level 2 mapping
             vocab_size=3,
             chunk_size=2,
             sequences={
                 0: (0, 1),  # char 0 -> tokens [0,1]
                 1: (2, 3),  # char 1 -> tokens [2,3]
                 2: (3, 4),  # char 2 -> tokens [3,4]
-            },
-        ),
-        VocabLevel(  # Level 2 -> Level 1 mapping
-            vocab_size=2,
-            chunk_size=2,
-            sequences={
-                0: (0, 1),  # word 0 -> chars [0,1]
-                1: (1, 2),  # word 1 -> chars [1,2]
             },
         ),
     ]
@@ -86,41 +86,41 @@ def test_hierarchy_respected():
     hierarchy = builder.build()
     
     tokens = torch.tensor([[0,1,2]])
-    decoded = hierarchy.decode_sequence(tokens,start_level=2, target_level=0)
+    decoded = hierarchy.decode_sequence(tokens,start_level=0, target_level=2)
     
     target_length = np.prod( [level.chunk_size for level in hierarchy.levels]) * tokens.shape[1]
     assert target_length == decoded.shape[1]
-
+    
 def test_single_token_decoding(simple_hierarchy):
     """Test decoding of individual tokens."""
-    # Level 2 token 0 maps to level 1 tokens [0,1]
-    # which map to level 0 tokens [0,1,2,3]
+    # Level 0 token 0 maps to level 1 tokens [0,1]
+    # which map to level 2 tokens [0,1,2,3]
     word = torch.tensor([[0]], device=simple_hierarchy.device)
     
-    # Decode from level 2 to level 1
-    chars = simple_hierarchy.decode_sequence(word, start_level=2, target_level=1)
-    assert torch.equal(chars, torch.tensor([[0, 1]], device=simple_hierarchy.device))
-    
-    # Decode from level 2 to level 0
-    tokens = simple_hierarchy.decode_sequence(word, start_level=2, target_level=0)
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(word)
     assert torch.equal(tokens, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device))
+    
+    # Decode from level 0 to level 1
+    chars = simple_hierarchy.decode_sequence(word, target_level=1)
+    assert torch.equal(chars, torch.tensor([[0, 1]], device=simple_hierarchy.device))
 
 
 def test_sequence_decoding(simple_hierarchy):
     """Test decoding of token sequences."""
-    # Level 2 sequence [0,1] maps to:
+    # Level 0 sequence [0,1] maps to:
     # Level 1: [0,1,1,2]
-    # Level 0: [0,1,2,3,2,3,3,4]
+    # Level 2: [0,1,2,3,2,3,3,4]
     words = torch.tensor([[0, 1]], device=simple_hierarchy.device)
     
-    # Decode sequence from level 2 to level 1
-    chars = simple_hierarchy.decode_sequence(words, start_level=2, target_level=1)
-    assert torch.equal(chars, torch.tensor([[0, 1, 1, 2]], device=simple_hierarchy.device))
-    
-    # Decode sequence from level 2 to level 0
-    tokens = simple_hierarchy.decode_sequence(words, start_level=2, target_level=0)
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(words)
     assert torch.equal(tokens, 
         torch.tensor([[0, 1, 2, 3, 2, 3, 3, 4]], device=simple_hierarchy.device))
+    
+    # Decode to intermediate level
+    chars = simple_hierarchy.decode_sequence(words, target_level=1)
+    assert torch.equal(chars, torch.tensor([[0, 1, 1, 2]], device=simple_hierarchy.device))
 
 
 def test_batch_decoding(simple_hierarchy):
@@ -130,9 +130,8 @@ def test_batch_decoding(simple_hierarchy):
         [1, 0],  # Second sequence: word 1 followed by word 0
     ], device=simple_hierarchy.device)
     
-    # First sequence: [0,1] -> [0,1,1,2] -> [0,1,2,3,2,3,3,4]
-    # Second sequence: [1,0] -> [1,2,0,1] -> [2,3,3,4,0,1,2,3]
-    tokens = simple_hierarchy.decode_sequence(words, start_level=2, target_level=0)
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(words)
     
     expected = torch.tensor([
         [0, 1, 2, 3, 2, 3, 3, 4],  # Decoded first sequence
@@ -148,15 +147,28 @@ def test_invalid_level_decoding(simple_hierarchy):
     
     # Invalid start level (too high)
     with pytest.raises(ValueError, match="Invalid start_level"):
-        simple_hierarchy.decode_sequence(words, start_level=3, target_level=0)
+        simple_hierarchy.decode_sequence(words, start_level=3)
         
     # Invalid target level (negative)
     with pytest.raises(ValueError, match="Invalid target_level"):
-        simple_hierarchy.decode_sequence(words, start_level=2, target_level=-1)
+        simple_hierarchy.decode_sequence(words, target_level=-1)
     
     # Can't decode upward
-    with pytest.raises(ValueError, match="Can only decode to same or lower levels"):
-        simple_hierarchy.decode_sequence(words, start_level=0, target_level=1)
+    with pytest.raises(ValueError, match="Can only decode to same or higher levels"):
+        simple_hierarchy.decode_sequence(words, start_level=1, target_level=0)
+
+
+def test_default_decoding(simple_hierarchy):
+    """Test default decoding behavior."""
+    # Single token at most abstract level
+    word = torch.tensor([[0]], device=simple_hierarchy.device)
+    
+    # These should all be equivalent
+    full_decode = simple_hierarchy.decode_sequence(word)
+    explicit_decode = simple_hierarchy.decode_sequence(word, start_level=0, target_level=2)
+    
+    assert torch.equal(full_decode, explicit_decode)
+    assert torch.equal(full_decode, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device))
 
 
 def test_from_sequences():
@@ -196,10 +208,11 @@ def test_device_handling():
 
     # Test decoding maintains device
     tokens = torch.tensor([[0]], device="cpu")
-    result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=1)
     assert result.device.type == "cpu"
 
     # Test with same level returns input unchanged
+    # ...this should probably be its own test, no? has nothing to do with device mgmt.
     tokens = torch.tensor([[0]], device="cpu")
     result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
     assert result.device.type == "cpu"

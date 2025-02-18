@@ -10,13 +10,14 @@ from typing_extensions import Self
 # Type aliases for clarity
 TokenIdx: TypeAlias = int
 TokenSeq: TypeAlias = tuple[int, ...]
+Shape: TypeAlias = tuple[int, ...]
 
 
 @dataclass
 class VocabLevel:
-    """A single level in the vocabulary hierarchy.
-
-    Attributes:
+    """
+    A single level in the vocabulary hierarchy.
+        Attributes:
         vocab_size: Number of tokens at this level
         chunk_size: Number of tokens from parent level per token
         sequences: Mapping of each token to its constituent sequence
@@ -26,7 +27,7 @@ class VocabLevel:
     chunk_size: int
     sequences: dict[TokenIdx, TokenSeq]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate vocabulary level properties."""
         if self.vocab_size < 1:
             raise ValueError("vocab_size must be positive")
@@ -53,58 +54,59 @@ class VocabLevel:
 
 
 class VocabHierarchy:
-    """Manages hierarchical relationships between vocabulary levels.
+    """
+    Manages hierarchical relationships between vocabulary levels.
 
     Note: VocabLevels represent mappings BETWEEN levels, not the levels themselves.
     With n VocabLevels, we actually have n+1 vocabulary levels total.
-
-    For example, with 2 VocabLevels (A and B):
-    Level 2 -> Level 1 (Mapping A)
-    Level 1 -> Level 0 (Mapping B)
+    Level indexing goes from most abstract (0) to most concrete (n):
+    Level 0 -> Level 1 (Mapping A)
+    Level 1 -> Level 2 (Mapping B)
     """
 
     def __init__(
         self,
         levels: Sequence[VocabLevel],
         device: str | None = None,
-    ):
+    ) -> None:
         """Initialize vocabulary hierarchy.
 
         Args:
-            levels: Sequence of vocabulary mappings from lowest to highest
+            levels: Sequence of vocabulary mappings from highest to lowest abstraction
             device: Optional compute device, defaults to CPU
         """
         self.device = device if device else "cpu"
         self.levels = list(levels)
-
-        # Total number of actual vocabulary levels is one more than number of mappings
         self.num_levels = len(self.levels) + 1
-
-        # Create lookup tables for efficient decoding
         self.decode_tables = self._build_decode_tables()
 
     def decode_sequence(
         self,
         tokens: torch.Tensor,
-        start_level: int,
-        target_level: int,
+        start_level: int | None = None,
+        target_level: int | None = None,
     ) -> torch.Tensor:
         """Decode token sequence from one level to another.
 
         Args:
             tokens: Input token sequence [batch_size, seq_len]
-            start_level: Index of starting vocabulary level (0 to num_levels-1)
-            target_level: Index of target vocabulary level (0 to num_levels-1)
-
+            start_level: Optional starting level (defaults to 0)
+            target_level: Optional target level (defaults to max level)
         Returns:
             Decoded token sequences at target level [batch_size, new_seq_len]
         """
+        # Default to decoding from top level to bottom level
+        if start_level is None:
+            start_level = 0
+        if target_level is None:
+            target_level = self.num_levels - 1
+
         if not (0 <= start_level < self.num_levels):
             raise ValueError(f"Invalid start_level: {start_level}")
         if not (0 <= target_level < self.num_levels):
             raise ValueError(f"Invalid target_level: {target_level}")
-        if target_level > start_level:
-            raise ValueError("Can only decode to same or lower levels")
+        if target_level < start_level:
+            raise ValueError("Can only decode to same or higher levels")
 
         # Return input tokens if no decoding needed
         if target_level == start_level:
@@ -114,23 +116,19 @@ class VocabHierarchy:
         current = tokens
 
         # Decode through intermediate levels
-        # We need to use the mapping at index (level-1) to go from level to level-1
-        for level in range(start_level - 1, target_level - 1, -1):
-            # Get decode table for this level
+        for level in range(start_level, target_level):
             table = self.decode_tables[level]
-
-            # Look up sequences for each token
-            decoded = table[current]  # [batch, seq_len, max_child_seq_len]
+            decoded = table[current]
 
             # Remove padding and flatten sequence
             mask = decoded != -1
-            lengths = mask.sum(dim=-1)  # [batch, seq_len]
-            max_length = lengths.sum(dim=-1).max().item()
+            lengths = mask.sum(dim=-1)
+            max_length = int(lengths.sum(dim=-1).max().item())
 
-            # Create output tensor
+            # Create output tensor with proper shape and type
             result = torch.full(
-                (decoded.shape[0], max_length),
-                -1,
+                size=(decoded.shape[0], max_length),
+                fill_value=-1,
                 dtype=torch.long,
                 device=self.device,
             )
@@ -140,10 +138,10 @@ class VocabHierarchy:
             for i in range(decoded.shape[1]):
                 seq_lengths = lengths[:, i]
                 for b in range(decoded.shape[0]):
-                    length = seq_lengths[b].item()
+                    length = int(seq_lengths[b].item())
                     if length > 0:
                         result[b, pos : pos + length] = decoded[b, i, :length]
-                pos += seq_lengths.max().item()
+                pos += int(seq_lengths.max().item())
 
             current = result
 
@@ -153,25 +151,21 @@ class VocabHierarchy:
         """Build lookup tables for decoding between levels.
 
         Returns:
-            List of tensors mapping parent tokens to child sequences
+            List of tensors mapping level i tokens to level i+1 sequences
             Each tensor has shape [parent_vocab_size, max_child_sequence_length]
             with padded sequences for consistent shape
         """
-        # Note: For n+1 levels, we need n decode tables
-        # Table[i] represents mapping from level i+1 to level i
         tables = []
         for level in self.levels:
             max_length = max(len(seq) for seq in level.sequences.values())
 
-            # Create table with padding
             table = torch.full(
-                (level.vocab_size, max_length),
-                -1,  # Use -1 as padding token
+                size=(level.vocab_size, max_length),
+                fill_value=-1,
                 dtype=torch.long,
                 device=self.device,
             )
 
-            # Fill in sequences
             for token, sequence in level.sequences.items():
                 table[token, : len(sequence)] = torch.tensor(
                     sequence, dtype=torch.long, device=self.device
@@ -189,12 +183,10 @@ class VocabHierarchy:
         device: str | None = None,
     ) -> Self:
         """Create hierarchy from sequence mappings.
-
         Args:
             sequences: Mappings for each level
             chunk_sizes: Number of tokens per chunk at each level
             device: Optional compute device
-
         Returns:
             Initialized VocabHierarchy
         """
