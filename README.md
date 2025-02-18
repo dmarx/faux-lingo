@@ -389,3 +389,194 @@ For additional support and resources:
 - Check the GitHub repository
 - Review test cases for examples
 - File issues for bugs or feature requests
+
+---
+
+# Appendix H: Mathematics
+
+## H.1 Probability Models
+
+### Topic Space
+The topic space is constructed using orthonormal vectors that form a basis for generating token distributions. For a vocabulary of size V and T topics:
+
+1. **Topic Vectors**: Each topic i is represented by a unit vector vi ∈ ℝᵛ where:
+   - ‖vi‖₂ = 1 (unit length)
+   - vi · vj = 0 for i ≠ j (orthogonality)
+
+2. **Topic Mixtures**: A topic mixture w = (w₁, ..., wₜ) satisfies:
+   - wᵢ ≥ 0 for all i
+   - Σwᵢ = 1
+
+3. **Token Distribution**: For a topic mixture w, the base token distribution p is:
+   p = Σ(wᵢvᵢ) for i = 1 to T
+
+### Color-Constrained Transitions
+
+1. **Color Classes**: The vocabulary is partitioned into C color classes where:
+   - Each token belongs to exactly one color
+   - Color c contains nc tokens
+   - Σnc = V (total vocabulary size)
+
+2. **Transition Matrix**: For a token distribution p, the transition matrix P is:
+   P(j|i) = p(j) * M(c(i),c(j)) / Z(i)
+   where:
+   - c(i) is the color of token i
+   - M is the color transition weight matrix
+   - Z(i) is the normalization factor
+
+3. **Normalization**: Z(i) ensures each row sums to 1:
+   Z(i) = Σ(p(j) * M(c(i),c(j))) for all j
+
+### Temperature Scaling
+Temperature T modifies the transition probabilities:
+P'(j|i) = P(j|i)^(1/T) / Z'(i)
+where Z'(i) is the new normalization factor.
+
+## H.2 Entropy Calculations
+
+### Color Entropy
+The empirical entropy of color transitions is:
+H(C) = -Σ P(j|i) log₂ P(j|i)
+averaged over all color pairs (i,j).
+
+### Topic Entropy
+For a batch of topic mixtures {wᵦ}, the entropy is:
+H(T) = -Σ w̄ᵢ log₂ w̄ᵢ
+where w̄ᵢ is the mean weight for topic i.
+
+### Token Entropy
+The empirical entropy of token sequences:
+H(V) = -Σ f(v) log₂ f(v)
+where f(v) is the observed frequency of token v.
+
+## H.3 Sequence Generation
+
+### Sampling Process
+1. Given a topic mixture w and current token i:
+   a. Compute base distribution p = Σ(wᵢvᵢ)
+   b. Apply color constraints to get P(j|i)
+   c. Apply temperature scaling
+   d. Sample next token from resulting distribution
+
+2. Batch Generation:
+   - Independent samples for each sequence
+   - Shared topic mixture within batch
+   - Parallel computation of transitions
+
+# Appendix B: Configuration Reference
+
+## B.1 Available Settings
+
+### Generation Configuration
+```yaml
+generation:
+  batch_size: 32          # Number of sequences per batch
+  seq_length: 20          # Length of each sequence
+  temperature: 1.0        # Sampling temperature (default: 1.0)
+  min_prob: 1e-6         # Minimum transition probability
+  device: "cuda"         # Compute device (optional)
+```
+
+### Vocabulary Configuration
+```yaml
+vocab:
+  token_vocab_size: 100   # Base vocabulary size
+  sequence_lengths:       # Length of sequences at each level
+    - 2                  # Level 1
+    - 3                  # Level 2
+  vocab_sizes:           # Vocabulary size at each level
+    - 20                # Level 1
+    - 30                # Level 2
+  chunk_sizes:           # Tokens per chunk at each level
+    - 2                 # Level 1
+    - 3                 # Level 2
+```
+
+### Topic Configuration
+```yaml
+topics:
+  n_topics: 3            # Number of topic vectors
+  init_method: "random"  # Initialization method
+  orthogonalize: true    # Force orthogonality
+```
+
+### Color Configuration
+```yaml
+colors:
+  fractions:             # Relative size of color classes
+    - 0.3               # Color 1
+    - 0.3               # Color 2
+    - 0.4               # Color 3
+  transition_weights:    # Optional color transition matrix
+    - [1.0, 0.5, 0.0]  # Color 1 transitions
+    - [0.5, 1.0, 0.5]  # Color 2 transitions
+    - [0.0, 0.5, 1.0]  # Color 3 transitions
+```
+
+### Augmentation Configuration
+```yaml
+augmentation:
+  deletion_prob: 0.05    # Character deletion probability
+  insertion_prob: 0.05   # Character insertion probability
+  substitution_prob: 0.05 # Character substitution probability
+  transposition_prob: 0.05 # Character transposition probability
+  seed: null             # Random seed (optional)
+```
+
+## B.2 Default Values
+
+### Core Defaults
+```yaml
+generation:
+  batch_size: 32
+  seq_length: 20
+  temperature: 1.0
+  min_prob: 1e-6
+  device: "cpu"
+
+vocab:
+  token_vocab_size: 10
+  sequence_lengths: [2, 3]
+  vocab_sizes: [20, 15]
+  chunk_sizes: [2, 3]
+
+topics:
+  n_topics: 2
+  init_method: "random"
+  orthogonalize: true
+
+colors:
+  fractions: [0.5, 0.5]
+  transition_weights: null  # Defaults to all-ones matrix
+```
+
+### Augmentation Defaults
+```yaml
+augmentation:
+  deletion_prob: 0.05
+  insertion_prob: 0.05
+  substitution_prob: 0.05
+  transposition_prob: 0.05
+  seed: null
+```
+
+## B.3 Environment Variables
+
+The following environment variables can override configuration settings:
+
+```bash
+FAUXLINGO_DEVICE="cuda"          # Override compute device
+FAUXLINGO_BATCH_SIZE="64"        # Override batch size
+FAUXLINGO_TEMPERATURE="0.8"      # Override temperature
+FAUXLINGO_SEED="42"             # Set random seed
+```
+
+## B.4 Configuration Validation
+
+The configuration system validates:
+1. Numeric ranges (e.g., probabilities between 0 and 1)
+2. Compatibility between components
+3. Resource requirements (e.g., memory constraints)
+4. Device availability
+
+Configuration errors include detailed messages explaining the validation failure and suggested fixes.
