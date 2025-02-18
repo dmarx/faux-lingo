@@ -16,7 +16,7 @@ SeqLen: TypeAlias = int
 @dataclass
 class DatasetConfig:
     """Configuration for dataset generation.
-    
+
     Attributes:
         batch_size: Number of sequences per batch
         seq_length: Length of each sequence
@@ -34,7 +34,7 @@ class DatasetConfig:
 
 class SequenceDataset:
     """Manages generation and iteration of sequence batches.
-    
+
     Core functionality:
     1. Batch generation with consistent configuration
     2. Tracking of sequence properties and metadata
@@ -47,7 +47,7 @@ class SequenceDataset:
         config: DatasetConfig,
     ):
         """Initialize dataset with generator and configuration.
-        
+
         Args:
             generator: Sequence generator instance
             config: Dataset generation parameters
@@ -88,7 +88,7 @@ class SequenceDataset:
         start_color: int | None = None,
     ) -> GeneratedSequences:
         """Generate a single batch of sequences.
-        
+
         Args:
             topic_mixtures: Optional pre-specified topic mixtures
             start_color: Optional color index to start sequences with
@@ -117,10 +117,10 @@ class SequenceDataset:
 
     def get_color_sequences(self, tokens: torch.Tensor) -> torch.Tensor:
         """Convert token sequences to color sequences.
-        
+
         Args:
             tokens: Token sequences [batch_size, seq_length]
-            
+
         Returns:
             Color sequences [batch_size, seq_length]
         """
@@ -138,15 +138,15 @@ class SequenceDataset:
 
     def get_batch_stats(self, batch: GeneratedSequences) -> dict:
         """Compute statistics for a batch of sequences.
-        
+
         Args:
             batch: Batch of generated sequences
-            
+
         Returns:
             Dictionary of batch statistics
         """
         color_seqs = self.get_color_sequences(batch.tokens)
-        
+
         stats = {
             "mean_log_prob": batch.log_probs.mean().item(),
             "topic_weights": batch.topic_mixtures.mean(0).tolist(),
@@ -155,7 +155,7 @@ class SequenceDataset:
                 minlength=self.generator.transition_model.color_space.n_colors,
             ).tolist(),
         }
-        
+
         return stats
 
     @property
