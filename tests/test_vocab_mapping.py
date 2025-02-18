@@ -161,9 +161,9 @@ def test_device_handling():
     level = VocabLevel(vocab_size=2, chunk_size=1, sequences={0: (0,), 1: (1,)})
     hierarchy = VocabHierarchy([level], device="cpu")
 
-    # Input on same device
-    tokens = torch.tensor([[0]], device="cpu")
-    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    # Test with actual decoding to ensure device handling
+    tokens = torch.tensor([[0, 1]], device="cpu")
+    result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
     assert result.device.type == "cpu"
 
     # Input on different device gets moved
