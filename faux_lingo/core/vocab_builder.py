@@ -1,8 +1,8 @@
 # faux_lingo/core/vocab_builder.py
 """Builder for constructing hierarchical vocabularies."""
 
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 from typing import TypeAlias
 
 from loguru import logger
@@ -17,7 +17,7 @@ TokenSeq: TypeAlias = tuple[int, ...]
 @dataclass
 class BuilderConfig:
     """Configuration for vocabulary hierarchy construction.
-    
+
     Attributes:
         token_vocab_size: Size of base token vocabulary
         sequence_lengths: List of sequence lengths for each level
@@ -59,7 +59,7 @@ class BuilderConfig:
 
 class VocabBuilder:
     """Builds hierarchical vocabularies with constrained structure.
-    
+
     Core functionality:
     1. Random sampling of valid token sequences
     2. Building vocabularies level by level
@@ -68,23 +68,23 @@ class VocabBuilder:
 
     def __init__(self, config: BuilderConfig):
         """Initialize builder with configuration.
-        
+
         Args:
             config: Parameters for vocabulary construction
         """
         self.config = config
         self._rng = random.Random(config.seed)
-        
+
         # Initialize sequence tracking
         self._used_sequences: list[set[TokenSeq]] = [
             set() for _ in range(len(config.vocab_sizes))
         ]
-        
+
         logger.info("Initialized VocabBuilder with config: {}", config)
 
     def build(self) -> VocabHierarchy:
         """Build complete vocabulary hierarchy.
-        
+
         Returns:
             VocabHierarchy with all levels constructed
         """
@@ -96,13 +96,12 @@ class VocabBuilder:
             zip(self.config.sequence_lengths, self.config.vocab_sizes)
         ):
             logger.debug("Building level {} vocabulary...", level)
-            
+
             # Generate valid sequences for this level
             sequences = {}
             while len(sequences) < vocab_size:
                 seq = tuple(
-                    self._rng.randrange(current_vocab_size)
-                    for _ in range(seq_len)
+                    self._rng.randrange(current_vocab_size) for _ in range(seq_len)
                 )
                 if seq not in self._used_sequences[level]:
                     token_idx = len(sequences)
@@ -116,10 +115,10 @@ class VocabBuilder:
                 sequences=sequences,
             )
             levels.append(level)
-            
+
             # Update for next level
             current_vocab_size = vocab_size
-            
+
             logger.debug(
                 "Built level {} with {} sequences of length {}",
                 level,
@@ -132,7 +131,7 @@ class VocabBuilder:
     @classmethod
     def create_default_config(cls) -> BuilderConfig:
         """Create configuration with reasonable defaults.
-        
+
         Returns:
             BuilderConfig for simple three-level hierarchy
         """
@@ -151,14 +150,14 @@ def create_word_hierarchy(
     seed: int | None = None,
 ) -> VocabHierarchy:
     """Convenience function to create character-word vocabulary.
-    
+
     Args:
         token_vocab_size: Size of base token vocabulary
         n_chars: Number of unique characters
         n_words: Number of unique words
         chars_per_word: Number of characters per word
         seed: Optional random seed
-        
+
     Returns:
         Two-level hierarchy mapping words to character sequences
     """
