@@ -3,6 +3,7 @@
 
 from dataclasses import dataclass
 from typing import Iterator, Sequence, TypeAlias
+
 import torch
 from typing_extensions import Self
 
@@ -55,7 +56,7 @@ class VocabLevel:
 class VocabHierarchy:
     """
     Manages hierarchical relationships between vocabulary levels.
-    
+
     Note: VocabLevels represent mappings BETWEEN levels, not the levels themselves.
     With n VocabLevels, we actually have n+1 vocabulary levels total.
     Level indexing goes from most abstract (0) to most concrete (n):
@@ -69,7 +70,7 @@ class VocabHierarchy:
         device: str | None = None,
     ) -> None:
         """Initialize vocabulary hierarchy.
-        
+
         Args:
             levels: Sequence of vocabulary mappings from highest to lowest abstraction
             device: Optional compute device, defaults to CPU
@@ -139,7 +140,7 @@ class VocabHierarchy:
                 for b in range(decoded.shape[0]):
                     length = int(seq_lengths[b].item())
                     if length > 0:
-                        result[b, pos:pos + length] = decoded[b, i, :length]
+                        result[b, pos : pos + length] = decoded[b, i, :length]
                 pos += int(seq_lengths.max().item())
 
             current = result
@@ -173,7 +174,7 @@ class VocabHierarchy:
             tables.append(table)
 
         return tables
-        
+
     @classmethod
     def from_sequences(
         cls,
@@ -202,7 +203,7 @@ class VocabHierarchy:
             levels.append(level)
 
         return cls(levels, device=device)
-        
+
     def __getitem__(self, level: int) -> VocabLevel:
         """Get vocabulary level by index."""
         return self.levels[level]
