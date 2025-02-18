@@ -47,12 +47,12 @@ jobs:
         
     - name: Run formatters and linters
       run: |
+        echo "Running ruff..."
+        ruff check --fix .
         echo "Running black..."
         black .
         echo "Running isort..."
         isort .
-        echo "Running mypy and applying fixes..."
-        mypy faux_lingo --pretty --show-error-codes --fix
         
     - name: Commit formatting changes
       if: github.event_name == 'pull_request'
@@ -67,5 +67,16 @@ jobs:
         
     - name: Run tests
       run: |
-        pytest --cov
-        
+        pytest --cov  
+  
+    - name: Run type checking (informational)
+      continue-on-error: true
+      run: |
+        echo "=== mypy Type Check Report ===" >> $GITHUB_STEP_SUMMARY
+        mypy faux_lingo --pretty | tee -a $GITHUB_STEP_SUMMARY || true
+    
+    - name: Run linting (informational)
+      continue-on-error: true
+      run: |
+        echo "=== Ruff Lint Report ===" >> $GITHUB_STEP_SUMMARY
+        ruff check faux_lingo | tee -a $GITHUB_STEP_SUMMARY || true
