@@ -2,12 +2,11 @@
 """Extensions to vocabulary system for multiple mappings and augmentations."""
 
 from dataclasses import dataclass
-from typing import Iterator, Sequence, TypeAlias
+from typing import Sequence, TypeAlias
 
 import torch
-from loguru import logger
 
-from .vocab_mapping import TokenIdx, TokenSeq, VocabHierarchy, VocabLevel
+from .vocab_mapping import TokenIdx, TokenSeq, VocabHierarchy
 
 # Type aliases
 Probability: TypeAlias = float
@@ -39,7 +38,7 @@ class MultiMappingLevel:
                 f"Number of sequences ({len(self.sequences)}) "
                 f"!= vocab_size ({self.vocab_size})"
             )
-        
+
         # Validate sequence probabilities
         for token, seqs in self.sequences.items():
             if not seqs:
@@ -56,7 +55,7 @@ class MultiMappingHierarchy:
 
     Core functionality:
     1. Support for multiple sequences mapping to same token
-    2. Probabilistic sequence selection during decoding 
+    2. Probabilistic sequence selection during decoding
     3. Integration with existing vocabulary system
     """
 
@@ -226,7 +225,7 @@ class SequenceAugmenter:
             Augmented token sequence
         """
         seq = list(sequence)
-        
+
         # Apply augmentations in random order
         ops = [
             (self._delete, self.config.deletion_prob),
@@ -246,7 +245,7 @@ class SequenceAugmenter:
         if len(seq) <= 1:
             return seq
         idx = torch.randint(len(seq), (1,)).item()
-        return seq[:idx] + seq[idx + 1:]
+        return seq[:idx] + seq[idx + 1 :]
 
     def _insert(self, seq: list[int]) -> list[int]:
         """Insert random token."""
@@ -298,17 +297,19 @@ def convert_to_multi_mapping(
         multi_sequences: dict[TokenIdx, list[AugmentedSeq]] = {}
 
         for token, base_seq in level.sequences.items():
-            variants: list[AugmentedSeq] = [(base_seq, 0.6)]  # Original sequence gets higher weight
+            variants: list[AugmentedSeq] = [
+                (base_seq, 0.6)
+            ]  # Original sequence gets higher weight
 
             if augmenter:
                 # Generate variants with augmentation
                 n_aug = min(n_variants - 1, 5)  # Cap number of variants
                 prob_per_variant = (1.0 - 0.6) / n_aug
-                
+
                 for _ in range(n_aug):
                     variant = augmenter.augment_sequence(base_seq)
                     variants.append((variant, prob_per_variant))
-            
+
             multi_sequences[token] = variants
 
         multi_level = MultiMappingLevel(
