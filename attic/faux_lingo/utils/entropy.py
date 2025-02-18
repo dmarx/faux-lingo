@@ -7,7 +7,6 @@ Utilities for computing various entropy measures and information-theoretic quant
 from typing import Tuple
 
 import numpy as np
-from loguru import logger
 
 
 def compute_entropy(prob_vector: np.ndarray, eps: float = 1e-12) -> np.float64:

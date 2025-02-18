@@ -87,7 +87,7 @@ def test_temperature_effect(simple_generator):
         """Get counts of token-to-token transitions."""
         counts = torch.zeros(
             (simple_generator.vocab_size, simple_generator.vocab_size),
-            device=tokens.device
+            device=tokens.device,
         )
         for i in range(tokens.shape[0]):  # For each sequence
             for t in range(tokens.shape[1] - 1):  # For each transition
@@ -98,7 +98,7 @@ def test_temperature_effect(simple_generator):
     # Get transition counts and convert to probabilities
     cold_counts = get_transition_counts(cold_seqs.tokens)
     hot_counts = get_transition_counts(hot_seqs.tokens)
-    
+
     cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
     hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
 

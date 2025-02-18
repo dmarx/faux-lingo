@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
 import numpy as np
 import torch
-from jaxtyping import Float, Int # noqa: F722
+from jaxtyping import Float, Int  # noqa: F722
 
 
 @dataclass

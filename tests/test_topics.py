@@ -2,7 +2,6 @@
 """Tests for topic vector space functionality."""
 
 from pathlib import Path
-from typing import TypeAlias
 
 import pytest
 import torch
