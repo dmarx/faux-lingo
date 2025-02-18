@@ -208,10 +208,11 @@ def test_device_handling():
 
     # Test decoding maintains device
     tokens = torch.tensor([[0]], device="cpu")
-    result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=1)
     assert result.device.type == "cpu"
 
     # Test with same level returns input unchanged
+    # ...this should probably be its own test, no? has nothing to do with device mgmt.
     tokens = torch.tensor([[0]], device="cpu")
     result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
     assert result.device.type == "cpu"
