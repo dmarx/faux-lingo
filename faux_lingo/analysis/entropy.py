@@ -19,7 +19,7 @@ NumTopics: TypeAlias = int
 @dataclass
 class EntropyMetrics:
     """Container for sequence entropy measurements.
-    
+
     Attributes:
         color_entropy: Empirical entropy of color transitions
         topic_entropy: Entropy of topic mixtures used in generation
@@ -42,7 +42,7 @@ class EntropyMetrics:
 
 class EntropyAnalyzer:
     """Analyzer for information-theoretic properties of sequences.
-    
+
     Core functionality:
     1. Computing empirical entropy of generated sequences
     2. Analyzing topic mixture entropy
@@ -59,7 +59,7 @@ class EntropyAnalyzer:
         sequences: GeneratedSequences,
     ) -> EntropyMetrics:
         """Compute entropy metrics for sequences.
-        
+
         Args:
             sequences: Generated token sequences and properties
 
@@ -76,10 +76,10 @@ class EntropyAnalyzer:
 
     def _compute_color_entropy(self, tokens: torch.Tensor) -> float:
         """Compute empirical entropy of color transitions.
-        
+
         Args:
             tokens: Generated token sequences [batch, seq_len]
-            
+
         Returns:
             Estimated color transition entropy
         """
@@ -90,13 +90,13 @@ class EntropyAnalyzer:
                 for seq in tokens
             ],
             device=self.device,
-            dtype=torch.long
+            dtype=torch.long,
         )
 
         # Count color transitions
         n_colors = self.transition_model.color_space.n_colors
         counts = torch.zeros((n_colors, n_colors), device=self.device)
-        
+
         for b in range(len(tokens)):
             for t in range(len(tokens[0]) - 1):
                 curr_color = colors[b, t]
@@ -107,42 +107,39 @@ class EntropyAnalyzer:
         # Add small epsilon to avoid division by zero
         row_sums = counts.sum(dim=1, keepdim=True) + 1e-10
         P = counts / row_sums
-        
+
         # Compute entropy per row and average
         H = -torch.sum(P * torch.log2(P + 1e-10), dim=1).mean()
-        
+
         return H.item()
 
     def _compute_topic_entropy(self, mixtures: torch.Tensor) -> float:
         """Compute entropy of topic mixtures.
-        
+
         Args:
             mixtures: Topic mixture weights [batch, n_topics]
-            
+
         Returns:
             Entropy of average topic distribution
         """
         # Average topic distribution across batch
         P = mixtures.mean(0)
         H = -torch.sum(P * torch.log2(P + 1e-10))
-        
+
         return H.item()
 
     def _compute_token_entropy(self, tokens: torch.Tensor) -> float:
         """Compute empirical entropy of token sequences.
-        
+
         Args:
             tokens: Generated token sequences [batch, seq_len]
-            
+
         Returns:
             Estimated token entropy
         """
         # Count token frequencies
-        counts = torch.zeros(
-            self.transition_model.vocab_size,
-            device=self.device
-        )
-        
+        counts = torch.zeros(self.transition_model.vocab_size, device=self.device)
+
         for seq in tokens.long():  # Ensure long dtype for indexing
             unique, seq_counts = torch.unique(seq, return_counts=True)
             counts[unique] += seq_counts
@@ -150,5 +147,5 @@ class EntropyAnalyzer:
         # Convert to probabilities and compute entropy
         P = counts / counts.sum()
         H = -torch.sum(P * torch.log2(P + 1e-10))
-        
+
         return H.item()

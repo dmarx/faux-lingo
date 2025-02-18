@@ -69,11 +69,7 @@ def test_topic_entropy(simple_analyzer):
 
     metrics = simple_analyzer.analyze_sequences(sequences)
     expected = torch.log2(torch.tensor(2.0))  # log2(num_topics)
-    assert torch.isclose(
-        torch.tensor(metrics.topic_entropy),
-        expected,
-        atol=1e-6
-    )
+    assert torch.isclose(torch.tensor(metrics.topic_entropy), expected, atol=1e-6)
 
     # Test with deterministic mixture
     det_mix = torch.zeros(4, 2)
