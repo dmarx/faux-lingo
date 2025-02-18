@@ -127,12 +127,17 @@ class VocabHierarchy:
             Decoded token sequences at target level [batch_size, new_seq_len]
             where new_seq_len accounts for sequence expansion
         """
-        if not (0 <= start_level < len(self.levels)):
-            raise ValueError(f"Invalid start_level: {start_level}")
-        if not (0 <= target_level < len(self.levels)):
-            raise ValueError(f"Invalid target_level: {target_level}")
-        if target_level > start_level:
-            raise ValueError("Can only decode to same or lower levels")
+        # if not (0 <= start_level < len(self.levels)):
+        #     raise ValueError(f"Invalid start_level: {start_level}")
+        # if not (0 <= target_level < len(self.levels)):
+        #     raise ValueError(f"Invalid target_level: {target_level}")
+        # if target_level > start_level:
+        #     raise ValueError("Can only decode to same or lower levels")
+        n_levels = len(self.levels) + 1  # total levels
+        if not (0 <= target_level < start_level <= n_levels):
+            raise ValueError(
+                f"Invalid levels: must have 0 <= target_level < start_level <= {n_levels}"
+            )
 
         # Return input tokens if no decoding needed
         if target_level == start_level:
