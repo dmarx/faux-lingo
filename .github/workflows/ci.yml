@@ -69,10 +69,3 @@ jobs:
       run: |
         pytest --cov
         
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-
-        
-    - name: Run PyTorch-specific tests
-      run: |
-        pytest tests/test_torch_*.py
