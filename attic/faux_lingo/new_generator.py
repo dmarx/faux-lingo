@@ -25,9 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-import tensorizer
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 
 # Type aliases for tensor dimensions
 BatchDim = int

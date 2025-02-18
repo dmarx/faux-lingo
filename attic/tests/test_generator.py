@@ -2,7 +2,6 @@
 
 """Tests for the document generation system."""
 
-from pathlib import Path
 
 import numpy as np
 import pytest

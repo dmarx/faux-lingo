@@ -6,7 +6,7 @@ Graph-based transition system with color-coded nodes for synthetic language gene
 
 import random
 from dataclasses import dataclass
-from typing import Dict, List, Set
+from typing import Dict, List
 
 import numpy as np
 from loguru import logger

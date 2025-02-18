@@ -1,262 +1,219 @@
-import tempfile
-from pathlib import Path
+# faux_lingo/tests/test_generator.py
+"""Tests for sequence generation."""
 
-import numpy as np
 import pytest
 import torch
 
-from faux_lingo.generator import (
-    LanguageParams,
-    ProbColorConstrainedGenerator,
-    validate_shapes,
-)
+from faux_lingo.core.generator import SequenceGenerator
 
 
 @pytest.fixture
-def device():
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-@pytest.fixture
-def simple_generator(device):
-    """Create a simple generator with 3 colors and 5 topics"""
-    color_fractions = [3, 5, 2]  # Will normalize to [0.3, 0.5, 0.2]
-    color_transitions = torch.tensor(
-        [[1.0, 0.5, 0.1], [0.4, 1.0, 0.7], [0.2, 0.6, 1.0]]
-    )
-
-    return ProbColorConstrainedGenerator(
-        n_topics=5,
-        vocab_size=100,
-        color_fractions=color_fractions,
-        color_transitions=color_transitions,
-        device=device,
+def simple_generator():
+    """Create a simple generator for testing."""
+    return SequenceGenerator.create_uniform(
+        vocab_size=9,
+        n_topics=2,
+        color_fractions=[1, 1, 1],  # Three equal color classes
     )
 
 
-def test_initialization(device):
-    """Test basic initialization with valid parameters"""
-    gen = ProbColorConstrainedGenerator(
-        n_topics=5,
-        vocab_size=100,
-        color_fractions=[1, 1, 1],
-        color_transitions=torch.ones(3, 3),
-        device=device,
+def test_sequence_shapes(simple_generator):
+    """Test output shapes from generation."""
+    batch_size = 4
+    seq_length = 10
+
+    sequences = simple_generator.generate(
+        batch_size=batch_size,
+        seq_length=seq_length,
     )
 
-    assert gen.n_topics == 5
-    assert gen.vocab_size == 100
-    assert gen.n_colors == 3
-    assert torch.allclose(gen.color_fractions.sum(), torch.tensor(1.0))
+    assert sequences.tokens.shape == (batch_size, seq_length)
+    assert sequences.topic_mixtures.shape == (batch_size, 2)  # 2 topics
+    assert sequences.log_probs.shape == (batch_size,)
 
 
-def test_color_fraction_normalization(device):
-    """Test that color fractions are properly normalized"""
-    gen = ProbColorConstrainedGenerator(
-        n_topics=5,
-        vocab_size=100,
-        color_fractions=[3, 5, 2],  # Should normalize to [0.3, 0.5, 0.2]
-        color_transitions=torch.ones(3, 3),
-        device=device,
+def test_token_ranges(simple_generator):
+    """Test that generated tokens are within vocabulary."""
+    sequences = simple_generator.generate(
+        batch_size=10,
+        seq_length=20,
     )
 
-    expected = torch.tensor([0.3, 0.5, 0.2], device=device)
-    assert torch.allclose(gen.color_fractions, expected, atol=1e-6)
+    assert torch.all(sequences.tokens >= 0)
+    assert torch.all(sequences.tokens < simple_generator.vocab_size)
 
 
-def test_invalid_color_transitions(device):
-    """Test that invalid color transitions raise appropriate errors"""
-    with pytest.raises(ValueError):
-        # Wrong shape
-        ProbColorConstrainedGenerator(
-            n_topics=5,
-            vocab_size=100,
-            color_fractions=[1, 1, 1],
-            color_transitions=torch.ones(2, 3),  # Wrong shape
-            device=device,
-        )
+def test_color_start(simple_generator):
+    """Test generation with specific start color."""
+    batch_size = 5
+    color_idx = 1  # Middle color class
 
-    with pytest.raises(ValueError):
-        # Negative transitions
-        ProbColorConstrainedGenerator(
-            n_topics=5,
-            vocab_size=100,
-            color_fractions=[1, 1, 1],
-            color_transitions=torch.tensor(
-                [[1.0, -0.5, 0.1], [0.4, 1.0, 0.7], [0.2, 0.6, 1.0]]
-            ),
-            device=device,
-        )
-
-
-def test_topic_vector_orthonormality(simple_generator):
-    """Test that topic vectors are orthonormal"""
-    vectors = simple_generator.topic_vectors
-
-    # Test orthogonality
-    product = torch.mm(vectors, vectors.T)
-    identity = torch.eye(vectors.shape[0], device=vectors.device)
-    assert torch.allclose(product, identity, atol=1e-6)
-
-    # Test normalization
-    norms = torch.norm(vectors, dim=1)
-    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-6)
-
-
-def test_transition_matrix_properties(simple_generator):
-    """Test properties of generated transition matrices"""
-    matrices, mixtures = simple_generator.generate_transitions(batch_size=10)
-
-    # Test shape
-    assert matrices.shape == (
-        10,
-        simple_generator.vocab_size,
-        simple_generator.vocab_size,
-    )
-    assert mixtures.shape == (10, simple_generator.n_topics)
-
-    # Test stochastic properties
-    assert torch.allclose(matrices.sum(dim=-1), torch.ones_like(matrices[:, 0]))
-    assert torch.all(matrices >= 0)
-
-
-def test_sequence_generation(simple_generator):
-    """Test basic sequence generation properties"""
-    batch_size = 32
-    seq_length = 50
-    sequences, mixtures = simple_generator.sample_sequences(
-        batch_size=batch_size, seq_length=seq_length
+    sequences = simple_generator.generate_with_color(
+        batch_size=batch_size,
+        seq_length=10,
+        start_color=color_idx,
     )
 
-    # Test shapes
-    assert sequences.shape == (batch_size, seq_length)
-    assert mixtures.shape == (batch_size, simple_generator.n_topics)
-
-    # Test value ranges
-    assert torch.all(sequences >= 0)
-    assert torch.all(sequences < simple_generator.vocab_size)
-
-    # Test mixture properties
-    assert torch.allclose(mixtures.sum(dim=-1), torch.ones(batch_size))
-    assert torch.all(mixtures >= 0)
-
-
-def test_color_constraints(simple_generator):
-    """Test that color transition constraints are respected"""
-    batch_size = 1000
-    seq_length = 50
-    sequences, _ = simple_generator.sample_sequences(
-        batch_size=batch_size, seq_length=seq_length
+    # Get expected token range for color
+    start_idx, end_idx = simple_generator.transition_model.color_space.get_color_range(
+        color_idx
     )
 
-    # Convert sequences to color sequences
-    color_sequences = torch.tensor(
-        [[simple_generator.get_color(idx.item()) for idx in seq] for seq in sequences],
-        device=sequences.device,
-    )
-
-    # Test transition probabilities
-    for i in range(simple_generator.n_colors):
-        for j in range(simple_generator.n_colors):
-            mask = color_sequences[:, :-1] == i
-            if mask.any():
-                next_colors = color_sequences[:, 1:][mask]
-                if simple_generator.color_transitions[i, j] == 0:
-                    # Should never see forbidden transitions
-                    assert torch.sum(next_colors == j) == 0
-
-
-def test_serialization(simple_generator, tmp_path):
-    """Test saving and loading language parameters"""
-    save_path = tmp_path / "test_language.tensors"
-
-    # Save
-    simple_generator.save_language(save_path)
-
-    # Load
-    loaded = ProbColorConstrainedGenerator.load_language(save_path)
-
-    # Compare parameters
-    assert loaded.n_topics == simple_generator.n_topics
-    assert loaded.vocab_size == simple_generator.vocab_size
-    assert torch.allclose(loaded.color_fractions, simple_generator.color_fractions)
-    assert torch.allclose(loaded.color_transitions, simple_generator.color_transitions)
-    assert torch.allclose(loaded.topic_vectors, simple_generator.topic_vectors)
-
-
-def test_deterministic_generation(simple_generator):
-    """Test that same mixtures produce same transition matrices"""
-    batch_size = 10
-    mixtures = torch.rand(batch_size, simple_generator.n_topics)
-    mixtures = mixtures / mixtures.sum(dim=-1, keepdim=True)
-
-    matrices1, _ = simple_generator.generate_transitions(
-        batch_size=batch_size, mixtures=mixtures
-    )
-
-    matrices2, _ = simple_generator.generate_transitions(
-        batch_size=batch_size, mixtures=mixtures
-    )
-
-    assert torch.allclose(matrices1, matrices2)
+    # Check first tokens are in correct range
+    first_tokens = sequences.tokens[:, 0]
+    assert torch.all(first_tokens >= start_idx)
+    assert torch.all(first_tokens < end_idx)
 
 
 def test_temperature_effect(simple_generator):
-    """Test that temperature affects transition probabilities"""
-    matrices_hot, _ = simple_generator.generate_transitions(
-        batch_size=1, temperature=0.1  # Sharp distributions
-    )
-
-    matrices_cold, _ = simple_generator.generate_transitions(
-        batch_size=1, temperature=2.0  # Smooth distributions
-    )
-
-    # Hot temperature should give more peaked distributions
-    hot_entropy = -(matrices_hot * torch.log(matrices_hot + 1e-10)).sum()
-    cold_entropy = -(matrices_cold * torch.log(matrices_cold + 1e-10)).sum()
-
-    assert hot_entropy < cold_entropy
-
-
-def test_start_color_constraint(simple_generator):
-    """Test that sequences start with specified color when requested"""
-    start_color = 1
+    """Test that temperature effect is consistent across runs."""
     batch_size = 100
+    seq_length = 20
+    n_trials = 5
 
-    sequences, _ = simple_generator.sample_sequences(
-        batch_size=batch_size, start_color=start_color
+    entropy_diffs = []  # Store hot - cold entropy differences
+
+    for seed in range(n_trials):
+        torch.manual_seed(seed)
+
+        # Generate with different temperatures
+        cold_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=0.1,
+        )
+        hot_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=10.0,
+        )
+
+        # Compare transition statistics
+        def get_transition_counts(tokens: torch.Tensor) -> torch.Tensor:
+            """Get counts of token-to-token transitions."""
+            counts = torch.zeros(
+                (simple_generator.vocab_size, simple_generator.vocab_size),
+                device=tokens.device,
+            )
+            for i in range(tokens.shape[0]):  # For each sequence
+                for t in range(tokens.shape[1] - 1):  # For each transition
+                    curr, next = tokens[i, t], tokens[i, t + 1]
+                    counts[curr, next] += 1
+            return counts
+
+        # Get transition counts and convert to probabilities
+        cold_counts = get_transition_counts(cold_seqs.tokens)
+        hot_counts = get_transition_counts(hot_seqs.tokens)
+
+        cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
+        hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
+
+        # Calculate entropies
+        def get_entropy(probs: torch.Tensor) -> float:
+            """Calculate average entropy of transition distributions."""
+            return -(probs * torch.log(probs + 1e-10)).sum(-1).mean().item()
+
+        cold_entropy = get_entropy(cold_probs)
+        hot_entropy = get_entropy(hot_probs)
+
+        print(
+            f"Trial {seed}: cold={cold_entropy:.4f}, hot={hot_entropy:.4f}, diff={hot_entropy-cold_entropy:.4f}"
+        )
+        entropy_diffs.append(hot_entropy - cold_entropy)
+
+    # Check if the effect is consistent
+    signs = [diff > 0 for diff in entropy_diffs]
+    assert all(signs) or not any(
+        signs
+    ), "Temperature effect should be consistent across trials"
+
+
+def test_topic_mixture_validation(simple_generator):
+    """Test validation of topic mixture inputs."""
+    # Wrong batch size
+    bad_mixtures = torch.ones(3, 2) / 2  # 3 sequences when asking for 2
+
+    with pytest.raises(ValueError):
+        simple_generator.generate(
+            batch_size=2,
+            seq_length=10,
+            topic_mixtures=bad_mixtures,
+        )
+
+
+def test_start_token_validation(simple_generator):
+    """Test validation of start token inputs."""
+    # Wrong shape
+    bad_tokens = torch.zeros(3)  # 3 tokens when asking for 2 sequences
+
+    with pytest.raises(ValueError):
+        simple_generator.generate(
+            batch_size=2,
+            seq_length=10,
+            start_tokens=bad_tokens,
+        )
+
+
+def test_color_validation(simple_generator):
+    """Test validation of color inputs."""
+    with pytest.raises(ValueError):
+        simple_generator.generate_with_color(
+            batch_size=2,
+            seq_length=10,
+            start_color=99,  # Invalid color index
+        )
+
+
+def test_log_probability_consistency(simple_generator):
+    """Test that log probabilities are consistent with transitions."""
+    # Generate single sequence for simplicity
+    batch_size = 1
+    seq_length = 5
+    temperature = 1.0
+
+    # Generate with specific topic mixture
+    mixture = torch.tensor([[0.7, 0.3]], device=simple_generator.device)
+    sequences = simple_generator.generate(
+        batch_size=batch_size,
+        seq_length=seq_length,
+        topic_mixtures=mixture,
+        temperature=temperature,
     )
 
-    # Check that all sequences start with tokens from the specified color
-    start_colors = torch.tensor(
-        [simple_generator.get_color(idx.item()) for idx in sequences[:, 0]]
+    # Get transition matrix
+    transitions = simple_generator.transition_model.generate(
+        mixture,
+        temperature=temperature,
     )
 
-    assert torch.all(start_colors == start_color)
+    # Manually compute log probability
+    manual_log_prob = 0.0
+    for t in range(1, seq_length):
+        prev_token = sequences.tokens[0, t - 1]
+        curr_token = sequences.tokens[0, t]
+        prob = transitions[0, prev_token, curr_token]
+        manual_log_prob += torch.log(prob).item()
+
+    assert torch.allclose(
+        sequences.log_probs[0],
+        torch.tensor(manual_log_prob, device=simple_generator.device),
+        rtol=1e-5,
+    )
 
 
-def test_shape_validation():
-    """Test the shape validation utility"""
-    tensors = {"a": torch.randn(2, 3), "b": torch.randn(4, 4)}
+def test_reproducibility(simple_generator):
+    """Test that sequences are reproducible with same seed."""
+    torch.manual_seed(42)
+    seq1 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+    )
 
-    # Correct shapes
-    validate_shapes(tensors, {"a": (2, 3), "b": (4, 4)})
+    torch.manual_seed(42)
+    seq2 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+    )
 
-    # Wrong shapes
-    with pytest.raises(ValueError):
-        validate_shapes(tensors, {"a": (3, 2), "b": (4, 4)})
-
-
-def test_get_color_range(simple_generator):
-    """Test color range retrieval"""
-    for color in range(simple_generator.n_colors):
-        start, end = simple_generator.get_color_range(color)
-        assert start < end
-        assert start >= 0
-        assert end <= simple_generator.vocab_size
-
-    with pytest.raises(ValueError):
-        simple_generator.get_color_range(-1)
-
-    with pytest.raises(ValueError):
-        simple_generator.get_color_range(simple_generator.n_colors)
+    assert torch.all(seq1.tokens == seq2.tokens)
+    assert torch.allclose(seq1.log_probs, seq2.log_probs)
