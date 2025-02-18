@@ -1,4 +1,4 @@
-![](static/sequence-generation.png)
+![](static/sequence-generation.svg)
 
 # FauxLingo
 
