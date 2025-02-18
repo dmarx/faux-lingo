@@ -57,7 +57,7 @@ class VocabHierarchy:
 
     Note: VocabLevels represent mappings BETWEEN levels, not the levels themselves.
     With n VocabLevels, we actually have n+1 vocabulary levels total.
-    
+
     Level indexing goes from most abstract (0) to most concrete (n):
     Level 0 -> Level 1 (Mapping A)
     Level 1 -> Level 2 (Mapping B)
@@ -76,10 +76,10 @@ class VocabHierarchy:
         """
         self.device = device if device else "cpu"
         self.levels = list(levels)
-        
+
         # Total number of actual vocabulary levels is one more than number of mappings
         self.num_levels = len(self.levels) + 1
-        
+
         # Create lookup tables for efficient decoding
         self.decode_tables = self._build_decode_tables()
 
