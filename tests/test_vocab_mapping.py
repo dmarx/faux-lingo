@@ -134,7 +134,7 @@ def test_invalid_level_decoding(simple_hierarchy):
         simple_hierarchy.decode_sequence(words, start_level=2, target_level=-1)
 
     # Can't decode upward
-    with pytest.raises(ValueError, match="Can only decode to lower levels"):
+    with pytest.raises(ValueError, match="Can only decode to same or lower levels"):
         simple_hierarchy.decode_sequence(words, start_level=0, target_level=1)
 
 
