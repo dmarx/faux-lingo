@@ -1,6 +1,6 @@
-# FauxLingo Documentation
+![](static/sequence-generation.png)
 
-## User Guide
+# FauxLingo
 
 ### 1. Introduction
 
