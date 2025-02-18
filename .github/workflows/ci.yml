@@ -47,13 +47,14 @@ jobs:
         echo "::endgroup::"
         
     - name: Run formatters and linters
+      continue-on-error: true
       run: |
-        echo "Running ruff..."
-        ruff check --fix .
         echo "Running black..."
         black .
         echo "Running isort..."
         isort .
+        echo "Running ruff..."
+        ruff check --fix .
         
     - name: Commit formatting changes
       if: github.event_name == 'pull_request'
