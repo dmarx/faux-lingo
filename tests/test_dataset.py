@@ -127,4 +127,4 @@ def test_device_handling(simple_generator, simple_config):
 
     # Test color sequence conversion maintains device
     color_seqs = dataset.get_color_sequences(batch.tokens)
-    assert color_seqs.device == dataset.device
+    assert color_seqs.device.type == dataset.device
