@@ -60,10 +60,10 @@ class GenerationMetadata:
         # Save transition model components
         model_path = path / "model"
         model_path.mkdir(exist_ok=True)
-        
+
         topic_path = model_path / "topic_vectors.pt"
         self.transition_model.topic_space.save(topic_path)
-        
+
         color_path = model_path / "color_space.pt"
         self.transition_model.color_space.save(color_path)
         logger.info(f"Saved transition model to {model_path}")
@@ -107,7 +107,7 @@ class GenerationMetadata:
         sequences = []
         for level_path in level_paths:
             sequences.append(torch.load(level_path))
-        
+
         # Get chunk sizes from config
         chunk_sizes = config.vocab.chunk_sizes
         vocab_hierarchy = VocabHierarchy.from_sequences(
@@ -123,9 +123,7 @@ class GenerationMetadata:
         topic_space = TopicVectorSpace.load(
             model_path / "topic_vectors.pt", device=device
         )
-        color_space = ColorSpace.load(
-            model_path / "color_space.pt", device=device
-        )
+        color_space = ColorSpace.load(model_path / "color_space.pt", device=device)
         transition_model = TransitionMatrix(topic_space, color_space, device=device)
         logger.info(f"Loaded transition model from {model_path}")
 
