@@ -121,9 +121,9 @@ def test_device_handling(simple_generator, simple_config):
     batch = next(iter(dataset))
 
     # Check all tensors are on same device
-    assert batch.tokens.device == dataset.device
-    assert batch.topic_mixtures.device == dataset.device
-    assert batch.log_probs.device == dataset.device
+    assert batch.tokens.device.type == dataset.device
+    assert batch.topic_mixtures.device.type == dataset.device
+    assert batch.log_probs.device.type == dataset.device
 
     # Test color sequence conversion maintains device
     color_seqs = dataset.get_color_sequences(batch.tokens)
