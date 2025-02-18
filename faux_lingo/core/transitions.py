@@ -84,7 +84,9 @@ class TransitionMatrix:
         # Expand base probabilities to transition matrix shape
         transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
 
+    
         # Apply color mask to enforce transition constraints
+        color_mask = self.color_space.get_transition_mask()
         transitions = transitions * color_mask
 
         # Apply temperature BEFORE normalization
