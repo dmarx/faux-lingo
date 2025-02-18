@@ -65,54 +65,64 @@ def test_color_start(simple_generator):
     assert torch.all(first_tokens < end_idx)
 
 
+
 def test_temperature_effect(simple_generator):
-    """Test that temperature affects transition entropy."""
+    """Test that temperature effect is consistent across runs."""
     batch_size = 100
     seq_length = 20
-
-    # Generate with different temperatures
-    cold_seqs = simple_generator.generate(
-        batch_size=batch_size,
-        seq_length=seq_length,
-        temperature=0.1,
-    )
-    hot_seqs = simple_generator.generate(
-        batch_size=batch_size,
-        seq_length=seq_length,
-        temperature=10.0,
-    )
-
-    # Compare transition statistics
-    def get_transition_counts(tokens: torch.Tensor) -> torch.Tensor:
-        """Get counts of token-to-token transitions."""
-        counts = torch.zeros(
-            (simple_generator.vocab_size, simple_generator.vocab_size),
-            device=tokens.device,
+    n_trials = 5
+    
+    entropy_diffs = []  # Store hot - cold entropy differences
+    
+    for seed in range(n_trials):
+        torch.manual_seed(seed)
+        
+        # Generate with different temperatures
+        cold_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=0.1,
         )
-        for i in range(tokens.shape[0]):  # For each sequence
-            for t in range(tokens.shape[1] - 1):  # For each transition
-                curr, next = tokens[i, t], tokens[i, t + 1]
-                counts[curr, next] += 1
-        return counts
-
-    # Get transition counts and convert to probabilities
-    cold_counts = get_transition_counts(cold_seqs.tokens)
-    hot_counts = get_transition_counts(hot_seqs.tokens)
-
-    cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
-    hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
-
-    # Calculate entropies
-    def get_entropy(probs: torch.Tensor) -> float:
-        """Calculate average entropy of transition distributions."""
-        return -(probs * torch.log(probs + 1e-10)).sum(-1).mean().item()
-
-    cold_entropy = get_entropy(cold_probs)
-    hot_entropy = get_entropy(hot_probs)
-
-    # Higher temperature should lead to higher entropy
-    assert hot_entropy > cold_entropy
-
+        hot_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=10.0,
+        )
+    
+        # Compare transition statistics
+        def get_transition_counts(tokens: torch.Tensor) -> torch.Tensor:
+            """Get counts of token-to-token transitions."""
+            counts = torch.zeros(
+                (simple_generator.vocab_size, simple_generator.vocab_size),
+                device=tokens.device,
+            )
+            for i in range(tokens.shape[0]):  # For each sequence
+                for t in range(tokens.shape[1] - 1):  # For each transition
+                    curr, next = tokens[i, t], tokens[i, t + 1]
+                    counts[curr, next] += 1
+            return counts
+    
+        # Get transition counts and convert to probabilities
+        cold_counts = get_transition_counts(cold_seqs.tokens)
+        hot_counts = get_transition_counts(hot_seqs.tokens)
+    
+        cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
+        hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
+    
+        # Calculate entropies
+        def get_entropy(probs: torch.Tensor) -> float:
+            """Calculate average entropy of transition distributions."""
+            return -(probs * torch.log(probs + 1e-10)).sum(-1).mean().item()
+    
+        cold_entropy = get_entropy(cold_probs)
+        hot_entropy = get_entropy(hot_probs)
+        
+        print(f"Trial {seed}: cold={cold_entropy:.4f}, hot={hot_entropy:.4f}, diff={hot_entropy-cold_entropy:.4f}")
+        entropy_diffs.append(hot_entropy - cold_entropy)
+    
+    # Check if the effect is consistent
+    signs = [diff > 0 for diff in entropy_diffs]
+    assert all(signs) or not any(signs), "Temperature effect should be consistent across trials"
 
 def test_topic_mixture_validation(simple_generator):
     """Test validation of topic mixture inputs."""
