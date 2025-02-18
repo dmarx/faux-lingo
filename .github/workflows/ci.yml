@@ -52,7 +52,7 @@ jobs:
         echo "Running isort..."
         isort .
         echo "Running mypy and applying fixes..."
-        mypy faux_lingo --pretty --show-error-codes --apply || true
+        mypy faux_lingo --pretty --show-error-codes --fix
         
     - name: Commit formatting changes
       if: github.event_name == 'pull_request'
