@@ -148,7 +148,6 @@ class ColorSpace:
         # This should never happen due to the boundary check above
         raise RuntimeError("Failed to find color for token")
 
-
     def get_color_range(self, color_idx: int) -> tuple[int, int]:
         """
         Get token index range for a color.
