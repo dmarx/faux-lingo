@@ -39,13 +39,7 @@ class DatasetConfig:
 
 
 class SequenceDataset:
-    """Manages generation and iteration of sequence batches.
-
-    Core functionality:
-    1. Batch generation with consistent configuration
-    2. Tracking of sequence properties and metadata
-    3. Iterator interface for training/validation
-    """
+    """Manages generation and iteration of sequence batches."""
 
     def __init__(
         self,
@@ -109,6 +103,7 @@ class SequenceDataset:
                 start_color=start_color,
                 temperature=self.config.temperature,
                 topic_mixtures=topic_mixtures,
+                return_latent=True,
             )
         else:
             sequences = self.generator.generate(
@@ -116,6 +111,7 @@ class SequenceDataset:
                 seq_length=self.config.seq_length,
                 temperature=self.config.temperature,
                 topic_mixtures=topic_mixtures,
+                return_latent=True,
             )
 
         self._cached_batch = sequences
@@ -130,6 +126,9 @@ class SequenceDataset:
         Returns:
             Color sequences [batch_size, seq_length]
         """
+        if tokens is None:
+            raise ValueError("Cannot get color sequences from None tokens")
+            
         return torch.tensor(
             [
                 [
@@ -151,23 +150,21 @@ class SequenceDataset:
         Returns:
             Dictionary of batch statistics
         """
-        color_seqs = self.get_color_sequences(batch.tokens)
+        if batch.latent_tokens is None:
+            raise ValueError("Cannot compute stats without latent tokens")
+            
+        color_seqs = self.get_color_sequences(batch.latent_tokens)
 
         stats: BatchStats = {
             "mean_log_prob": batch.log_probs.mean().item(),
             "topic_weights": batch.topic_mixtures.mean(0).tolist(),
             "color_counts": torch.bincount(
                 color_seqs.view(-1),
-                minlength=self.generator.transition_model.color_space.n_colors,
+                minlength=self.n_colors,
             ).tolist(),
         }
 
         return stats
-
-    @property
-    def vocab_size(self) -> int:
-        """Get vocabulary size of generator."""
-        return self.generator.vocab_size
 
     @property
     def n_topics(self) -> int:
