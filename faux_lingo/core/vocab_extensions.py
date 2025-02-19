@@ -131,17 +131,18 @@ class MultiMappingHierarchy:
             for b in range(current.shape[0]):
                 pos = 0
                 for t in range(current.shape[1]):
-                    token = current[b, t].item()
-                    if token == -1:  # Skip padding
+                    # Ensure integer token index
+                    token_idx = int(current[b, t].item())
+                    if token_idx == -1:  # Skip padding
                         continue
 
                     # Get possible sequences and probabilities
-                    seqs = level_seqs[token]
+                    seqs = level_seqs[token_idx]
                     probs = torch.tensor([p for _, p in seqs], device=self.device)
 
-                    # Sample sequence based on probabilities
-                    idx = torch.multinomial(probs, 1).item()
-                    seq, _ = seqs[idx]
+                    # Sample sequence based on probabilities and convert to int
+                    seq_idx = int(torch.multinomial(probs, 1).item())
+                    seq, _ = seqs[seq_idx]
 
                     # Add sequence to result
                     result[b, pos : pos + len(seq)] = torch.tensor(
