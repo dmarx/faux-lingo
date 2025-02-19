@@ -80,16 +80,18 @@ class SequenceGenerator:
         current_length = sequence.shape[1]
         if current_length >= target_length:
             return sequence[:, :target_length]
-            
-        if (self.vocabulary.special_tokens is None or 
-            self.vocabulary.special_tokens.pad_token is None):
+
+        if (
+            self.vocabulary.special_tokens is None
+            or self.vocabulary.special_tokens.pad_token is None
+        ):
             raise ValueError("Padding token not defined")
-            
+
         padding = torch.full(
             (sequence.shape[0], target_length - current_length),
             self.vocabulary.special_tokens.pad_token,
             dtype=torch.long,
-            device=self.device
+            device=self.device,
         )
         return torch.cat([sequence, padding], dim=1)
 
@@ -124,8 +126,11 @@ class SequenceGenerator:
             produce the desired output length.
         """
         # Compute required latent sequence length
-        latent_length = (seq_length if not self.vocabulary.has_hierarchy 
-                        else self.vocabulary.hierarchy.compute_latent_length(seq_length))
+        latent_length = (
+            seq_length
+            if not self.vocabulary.has_hierarchy
+            else self.vocabulary.hierarchy.compute_latent_length(seq_length)
+        )
 
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -165,9 +170,7 @@ class SequenceGenerator:
             latent_sequences[:, 0] = start_tokens
         else:
             latent_sequences[:, 0] = torch.randint(
-                0, self.vocabulary.base_vocab_size, 
-                (batch_size,), 
-                device=self.device
+                0, self.vocabulary.base_vocab_size, (batch_size,), device=self.device
             )
 
         # Generate rest of sequences
