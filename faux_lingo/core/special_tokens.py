@@ -10,7 +10,7 @@ TokenIdx: TypeAlias = int
 @dataclass
 class SpecialTokens:
     """Special tokens for output sequences.
-    
+
     These tokens are only used at the most concrete vocabulary level
     and are managed by the sequence generator.
 
@@ -21,6 +21,7 @@ class SpecialTokens:
         unk_token: Token for unknown/rare tokens
         base_vocab_size: Size of base vocabulary before special tokens
     """
+
     base_vocab_size: int
     pad_token: TokenIdx | None = None
     bos_token: TokenIdx | None = None
@@ -50,12 +51,16 @@ class SpecialTokens:
 
     def num_special(self) -> int:
         """Get number of special tokens in use."""
-        return sum(1 for token in [
-            self.pad_token,
-            self.bos_token,
-            self.eos_token,
-            self.unk_token
-        ] if token is not None)
+        return sum(
+            1
+            for token in [
+                self.pad_token,
+                self.bos_token,
+                self.eos_token,
+                self.unk_token,
+            ]
+            if token is not None
+        )
 
     @classmethod
     def from_base_vocab(
@@ -68,14 +73,14 @@ class SpecialTokens:
         unk: bool = False,
     ) -> "SpecialTokens":
         """Create special tokens configuration from base vocabulary.
-        
+
         Args:
             base_vocab_size: Size of base vocabulary
             pad: Whether to include padding token
             bos: Whether to include beginning of sequence token
             eos: Whether to include end of sequence token
             unk: Whether to include unknown token
-            
+
         Returns:
             SpecialTokens with requested tokens enabled
         """
