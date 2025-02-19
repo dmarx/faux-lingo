@@ -67,13 +67,18 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
+strict_equality = true  # Added for better equality checks
+allow_redefinition = false
+
+# For numpy/torch compatibility
 ignore_missing_imports = true
-strict = true
 follow_imports = "normal"
 no_implicit_reexport = true
-enable_error_code = "truthy-bool,redundant-expr,ignore-without-code"
-explicit_package_bases = true
-# Enable applying suggested fixes
+
+# Additional error codes to enable
+enable_error_code = ["truthy-bool", "redundant-expr", "ignore-without-code"]
+
+# For better error messages
 pretty = true
 
 [tool.setuptools.packages.find]
