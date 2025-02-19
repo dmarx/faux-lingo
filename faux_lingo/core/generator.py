@@ -21,15 +21,15 @@ class GeneratedSequences:
 
     Attributes:
         tokens: Generated token sequences [batch_size, seq_len]
-        decoded_tokens: Optional decoded tokens at lowest vocabulary level
         topic_mixtures: Topic mixtures used for generation [batch_size, n_topics]
         log_probs: Log probabilities of generated sequences [batch_size]
+        latent_tokens: Optional latent transition sequences before decoding
     """
 
     tokens: torch.Tensor
     topic_mixtures: torch.Tensor
     log_probs: torch.Tensor
-    decoded_tokens: torch.Tensor | None = None
+    latent_tokens: torch.Tensor | None = None
 
 
 class SequenceGenerator:
@@ -40,7 +40,7 @@ class SequenceGenerator:
     1. Sampling sequences from transition matrices
     2. Computing sequence probabilities
     3. Generating with specific topic mixtures or color constraints
-    4. Decoding sequences through vocabulary hierarchy
+    4. Decoding sequences through vocabulary hierarchy when provided
     """
 
     def __init__(
@@ -70,7 +70,7 @@ class SequenceGenerator:
         topic_mixtures: torch.Tensor | None = None,
         start_tokens: torch.Tensor | None = None,
         min_prob: float = 1e-6,
-        decode_sequences: bool = True,
+        return_latent: bool = False,
     ) -> GeneratedSequences:
         """
         Generate batch of sequences.
@@ -82,7 +82,7 @@ class SequenceGenerator:
             topic_mixtures: Optional pre-specified topic mixtures [batch_size, n_topics]
             start_tokens: Optional initial tokens [batch_size]
             min_prob: Minimum probability for valid transitions
-            decode_sequences: Whether to decode through vocabulary hierarchy
+            return_latent: Whether to return latent transition sequences
 
         Returns:
             GeneratedSequences containing tokens and properties
@@ -90,7 +90,7 @@ class SequenceGenerator:
         Notes:
             If topic_mixtures not provided, samples from uniform distribution
             If start_tokens not provided, samples initial tokens uniformly
-            If decode_sequences=True and vocab_hierarchy exists, returns decoded tokens
+            If vocab_hierarchy exists, returns decoded token sequences
         """
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -113,7 +113,7 @@ class SequenceGenerator:
         )
 
         # Initialize sequences
-        sequences = torch.zeros(
+        latent_sequences = torch.zeros(
             (batch_size, seq_length), dtype=torch.long, device=self.device
         )
 
@@ -127,9 +127,9 @@ class SequenceGenerator:
                     f"Start tokens shape {start_tokens.shape} "
                     f"!= (batch_size={batch_size},)"
                 )
-            sequences[:, 0] = start_tokens
+            latent_sequences[:, 0] = start_tokens
         else:
-            sequences[:, 0] = torch.randint(
+            latent_sequences[:, 0] = torch.randint(
                 0, self.vocab_size, (batch_size,), device=self.device
             )
 
@@ -138,12 +138,12 @@ class SequenceGenerator:
             # Get transition probabilities for current tokens
             current_probs = transitions[
                 torch.arange(batch_size, device=self.device),
-                sequences[:, t - 1],
+                latent_sequences[:, t - 1],
             ]
 
             # Sample next tokens
             next_tokens = torch.multinomial(current_probs, 1).squeeze(-1)
-            sequences[:, t] = next_tokens
+            latent_sequences[:, t] = next_tokens
 
             # Update log probabilities
             log_probs += torch.log(
@@ -154,20 +154,20 @@ class SequenceGenerator:
                 )
             ).squeeze(-1)
 
-        # Decode sequences if requested and hierarchy exists
-        decoded_tokens = None
-        if decode_sequences and self.vocab_hierarchy is not None:
-            decoded_tokens = self.vocab_hierarchy.decode_sequence(
-                sequences,
+        # Decode sequences if hierarchy exists, otherwise use latent sequences
+        tokens = latent_sequences
+        if self.vocab_hierarchy is not None:
+            tokens = self.vocab_hierarchy.decode_sequence(
+                latent_sequences,
                 start_level=0,  # Most abstract level
                 target_level=len(self.vocab_hierarchy),  # Most concrete level
             )
 
         return GeneratedSequences(
-            tokens=sequences,
-            decoded_tokens=decoded_tokens,
+            tokens=tokens,
             topic_mixtures=topic_mixtures,
             log_probs=log_probs,
+            latent_tokens=latent_sequences if return_latent else None,
         )
 
     def generate_with_color(
@@ -177,7 +177,7 @@ class SequenceGenerator:
         start_color: int,
         temperature: float = 1.0,
         topic_mixtures: torch.Tensor | None = None,
-        decode_sequences: bool = True,
+        return_latent: bool = False,
     ) -> GeneratedSequences:
         """
         Generate sequences starting with tokens of a specific color.
@@ -188,7 +188,7 @@ class SequenceGenerator:
             start_color: Color index to start sequences with
             temperature: Controls randomness in sampling
             topic_mixtures: Optional pre-specified topic mixtures
-            decode_sequences: Whether to decode through vocabulary hierarchy
+            return_latent: Whether to return latent transition sequences
 
         Returns:
             GeneratedSequences with tokens starting from specified color
@@ -209,7 +209,7 @@ class SequenceGenerator:
             temperature=temperature,
             topic_mixtures=topic_mixtures,
             start_tokens=start_tokens,
-            decode_sequences=decode_sequences,
+            return_latent=return_latent,
         )
 
     @classmethod
