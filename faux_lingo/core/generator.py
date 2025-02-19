@@ -25,11 +25,10 @@ class GeneratedSequences:
         topic_mixtures: Topic mixtures used for generation [batch_size, n_topics]
         log_probs: Log probabilities of generated sequences [batch_size]
     """
-
     tokens: torch.Tensor
-    decoded_tokens: torch.Tensor | None
     topic_mixtures: torch.Tensor
     log_probs: torch.Tensor
+    decoded_tokens: torch.Tensor | None = None
 
 
 class SequenceGenerator:
