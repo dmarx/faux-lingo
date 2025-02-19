@@ -7,9 +7,9 @@ from typing import TypeAlias
 import torch
 from typing_extensions import Self
 
+from .special_tokens import SpecialTokens
 from .transitions import TransitionMatrix
 from .vocab_mapping import VocabHierarchy
-from .special_tokens import SpecialTokens
 
 # Type aliases for dimensions
 BatchDim: TypeAlias = int
@@ -64,20 +64,20 @@ class SequenceGenerator:
         self.transition_model = transition_model
         self.vocab_hierarchy = vocab_hierarchy
         self.special_tokens = special_tokens
-        
+
         # Validate special tokens if provided
         if special_tokens is not None:
             if vocab_hierarchy is None:
                 target_vocab = transition_model.vocab_size
             else:
                 target_vocab = vocab_hierarchy[-1].vocab_size
-            
+
             if special_tokens.base_vocab_size != target_vocab:
                 raise ValueError(
                     f"Special tokens base vocab size ({special_tokens.base_vocab_size}) "
                     f"doesn't match target vocabulary size ({target_vocab})"
                 )
-        
+
         self.vocab_size = transition_model.vocab_size
 
     def _pad_sequence(
@@ -101,15 +101,15 @@ class SequenceGenerator:
         current_length = sequence.shape[1]
         if current_length >= target_length:
             return sequence[:, :target_length]
-            
+
         if self.special_tokens is None or self.special_tokens.pad_token is None:
             raise ValueError("Padding token not defined")
-            
+
         padding = torch.full(
             (sequence.shape[0], target_length - current_length),
             self.special_tokens.pad_token,
             dtype=torch.long,
-            device=self.device
+            device=self.device,
         )
         return torch.cat([sequence, padding], dim=1)
 
@@ -144,8 +144,11 @@ class SequenceGenerator:
             produce the desired output length.
         """
         # Compute required latent sequence length
-        latent_length = (seq_length if self.vocab_hierarchy is None 
-                        else self.vocab_hierarchy.compute_latent_length(seq_length))
+        latent_length = (
+            seq_length
+            if self.vocab_hierarchy is None
+            else self.vocab_hierarchy.compute_latent_length(seq_length)
+        )
 
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -306,5 +309,5 @@ class SequenceGenerator:
             transition_model,
             vocab_hierarchy=vocab_hierarchy,
             special_tokens=special_tokens,
-            device=device
+            device=device,
         )
