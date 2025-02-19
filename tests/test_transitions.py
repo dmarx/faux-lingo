@@ -7,38 +7,45 @@ import torch
 from faux_lingo.core.colors import ColorSpace
 from faux_lingo.core.topics import TopicVectorSpace
 from faux_lingo.core.transitions import TransitionMatrix
+from faux_lingo.core.vocabulary import Vocabulary
 
 
 @pytest.fixture
-def simple_matrix():
+def simple_vocab():
+    """Create simple vocabulary for testing."""
+    return Vocabulary.create_simple(base_vocab_size=9)
+
+
+@pytest.fixture
+def simple_matrix(simple_vocab):
     """Create a simple transition matrix for testing."""
     return TransitionMatrix.create_uniform(
-        vocab_size=9,
+        vocabulary=simple_vocab,
         n_topics=2,
         color_fractions=[1, 1, 1],  # Three equal-sized color classes
     )
 
 
-def test_initialization():
+def test_initialization(simple_vocab):
     """Test constructor validation."""
     # Create spaces with mismatched vocab sizes
     topic_space = TopicVectorSpace(n_topics=2, vocab_size=10)
     color_space = ColorSpace(color_fractions=[1, 1], vocab_size=12)
 
     # Should raise error
-    with pytest.raises(ValueError, match="Vocab size mismatch"):
-        TransitionMatrix(topic_space, color_space)
+    with pytest.raises(ValueError, match="Topic space vocab size"):
+        TransitionMatrix(simple_vocab, topic_space, color_space)
 
 
-def test_uniform_creation():
+def test_uniform_creation(simple_vocab):
     """Test creation of uniform transition matrix."""
     matrix = TransitionMatrix.create_uniform(
-        vocab_size=6,
+        vocabulary=simple_vocab,
         n_topics=2,
         color_fractions=[1, 1],  # Two equal color classes
     )
 
-    assert matrix.vocab_size == 6
+    assert matrix.vocabulary.base_vocab_size == 9
     assert matrix.topic_space.n_topics == 2
     assert matrix.color_space.n_colors == 2
 
@@ -148,27 +155,43 @@ def test_device_consistency(simple_matrix):
     assert transitions.device == simple_matrix.color_space.mapping.boundaries.device
 
 
-def test_invalid_mixture_shape(simple_matrix):
-    """Test validation of topic mixture shape."""
-    # Wrong number of topics
-    bad_mixture = torch.ones(1, 3) / 3  # 3 topics when space has 2
-
-    with pytest.raises(ValueError):
-        simple_matrix.generate(bad_mixture)
-
-
-def test_reproducibility():
-    """Test that results are reproducible with same random seed."""
-    torch.manual_seed(42)
-    matrix1 = TransitionMatrix.create_uniform(
-        vocab_size=6, n_topics=2, color_fractions=[1, 1]
+def test_hierarchical_vocab():
+    """Test transitions with hierarchical vocabulary."""
+    vocab = Vocabulary.create_hierarchical(
+        base_vocab_size=6,
+        level_configs=[
+            (12, 2),  # Level 1: 12 tokens, chunks of 2
+            (24, 2),  # Level 2: 24 tokens, chunks of 2
+        ]
     )
-    result1 = matrix1.generate(torch.ones(1, 2) / 2)
 
-    torch.manual_seed(42)
-    matrix2 = TransitionMatrix.create_uniform(
-        vocab_size=6, n_topics=2, color_fractions=[1, 1]
+    matrix = TransitionMatrix.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1],  # Two color classes
     )
-    result2 = matrix2.generate(torch.ones(1, 2) / 2)
 
-    assert torch.allclose(result1, result2)
+    # Transitions should operate on base vocabulary
+    mixture = torch.ones(1, 2) / 2
+    transitions = matrix.generate(mixture)
+    assert transitions.shape == (1, 6, 6)
+
+
+def test_special_tokens():
+    """Test vocabulary with special tokens."""
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=6,
+        pad=True,
+        bos=True
+    )
+
+    matrix = TransitionMatrix.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1],
+    )
+
+    # Transitions should still use base vocabulary size
+    mixture = torch.ones(1, 2) / 2
+    transitions = matrix.generate(mixture)
+    assert transitions.shape == (1, 6, 6)

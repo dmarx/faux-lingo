@@ -41,13 +41,7 @@ class EntropyMetrics:
 
 
 class EntropyAnalyzer:
-    """Analyzer for information-theoretic properties of sequences.
-
-    Core functionality:
-    1. Computing empirical entropy of generated sequences
-    2. Analyzing topic mixture entropy
-    3. Tracking color transition patterns
-    """
+    """Analyzer for information-theoretic properties of sequences."""
 
     def __init__(self, transition_model: TransitionMatrix):
         """Initialize analyzer with transition model."""
@@ -65,11 +59,21 @@ class EntropyAnalyzer:
 
         Returns:
             EntropyMetrics containing various entropy measures
+
+        Notes:
+            Uses latent sequences for transition analysis when available
         """
+        # Use latent sequences for analysis if available
+        tokens = (
+            sequences.latent_tokens
+            if sequences.latent_tokens is not None
+            else sequences.tokens
+        )
+
         metrics = EntropyMetrics(
-            color_entropy=self._compute_color_entropy(sequences.tokens),
+            color_entropy=self._compute_color_entropy(tokens),
             topic_entropy=self._compute_topic_entropy(sequences.topic_mixtures),
-            token_entropy=self._compute_token_entropy(sequences.tokens),
+            token_entropy=self._compute_token_entropy(tokens),
         )
 
         return metrics
@@ -78,7 +82,7 @@ class EntropyAnalyzer:
         """Compute empirical entropy of color transitions.
 
         Args:
-            tokens: Generated token sequences [batch, seq_len]
+            tokens: Token sequences [batch, seq_len]
 
         Returns:
             Estimated color transition entropy
@@ -132,13 +136,14 @@ class EntropyAnalyzer:
         """Compute empirical entropy of token sequences.
 
         Args:
-            tokens: Generated token sequences [batch, seq_len]
+            tokens: Token sequences [batch, seq_len]
 
         Returns:
             Estimated token entropy
         """
         # Count token frequencies
-        counts = torch.zeros(self.transition_model.vocab_size, device=self.device)
+        vocab_size = self.transition_model.vocabulary.base_vocab_size
+        counts = torch.zeros(vocab_size, device=self.device)
 
         for seq in tokens.long():  # Ensure long dtype for indexing
             unique, seq_counts = torch.unique(seq, return_counts=True)

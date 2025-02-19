@@ -17,7 +17,8 @@ Shape: TypeAlias = tuple[int, ...]
 class VocabLevel:
     """
     A single level in the vocabulary hierarchy.
-        Attributes:
+
+    Attributes:
         vocab_size: Number of tokens at this level
         chunk_size: Number of tokens from parent level per token
         sequences: Mapping of each token to its constituent sequence
@@ -79,6 +80,39 @@ class VocabHierarchy:
         self.levels = list(levels)
         self.num_levels = len(self.levels) + 1
         self.decode_tables = self._build_decode_tables()
+
+        # Calculate total expansion ratio
+        self.expansion_ratio = 1
+        for level in self.levels:
+            self.expansion_ratio *= level.chunk_size
+
+    def compute_decoded_length(self, latent_length: int) -> int:
+        """
+        Compute the length of decoded sequences for a given latent length.
+
+        Args:
+            latent_length: Length of input sequence before decoding
+
+        Returns:
+            Expected length of decoded sequence
+        """
+        return latent_length * self.expansion_ratio
+
+    def compute_latent_length(self, decoded_length: int) -> int:
+        """
+        Compute required latent sequence length to achieve desired output length.
+
+        Args:
+            decoded_length: Desired length after decoding
+
+        Returns:
+            Required length of input sequence
+
+        Notes:
+            Returns max(1, decoded_length // expansion_ratio) to ensure
+            at least one token is generated.
+        """
+        return max(1, decoded_length // self.expansion_ratio)
 
     def decode_sequence(
         self,
