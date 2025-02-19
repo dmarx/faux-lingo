@@ -8,6 +8,7 @@ import torch
 from typing_extensions import Self
 
 from .transitions import TransitionMatrix
+from .vocab_mapping import VocabHierarchy
 
 # Type aliases for dimensions
 BatchDim: TypeAlias = int
@@ -20,11 +21,13 @@ class GeneratedSequences:
 
     Attributes:
         tokens: Generated token sequences [batch_size, seq_len]
+        decoded_tokens: Optional decoded tokens at lowest vocabulary level
         topic_mixtures: Topic mixtures used for generation [batch_size, n_topics]
         log_probs: Log probabilities of generated sequences [batch_size]
     """
 
     tokens: torch.Tensor
+    decoded_tokens: torch.Tensor | None
     topic_mixtures: torch.Tensor
     log_probs: torch.Tensor
 
@@ -37,11 +40,13 @@ class SequenceGenerator:
     1. Sampling sequences from transition matrices
     2. Computing sequence probabilities
     3. Generating with specific topic mixtures or color constraints
+    4. Decoding sequences through vocabulary hierarchy
     """
 
     def __init__(
         self,
         transition_model: TransitionMatrix,
+        vocab_hierarchy: VocabHierarchy | None = None,
         device: str | None = None,
     ):
         """
@@ -49,10 +54,12 @@ class SequenceGenerator:
 
         Args:
             transition_model: Model for generating transition matrices
+            vocab_hierarchy: Optional hierarchical vocabulary for decoding
             device: Optional compute device, defaults to CPU
         """
         self.device = device if device else "cpu"
         self.transition_model = transition_model
+        self.vocab_hierarchy = vocab_hierarchy
         self.vocab_size = transition_model.vocab_size
 
     def generate(
@@ -63,6 +70,7 @@ class SequenceGenerator:
         topic_mixtures: torch.Tensor | None = None,
         start_tokens: torch.Tensor | None = None,
         min_prob: float = 1e-6,
+        decode_sequences: bool = True,
     ) -> GeneratedSequences:
         """
         Generate batch of sequences.
@@ -74,6 +82,7 @@ class SequenceGenerator:
             topic_mixtures: Optional pre-specified topic mixtures [batch_size, n_topics]
             start_tokens: Optional initial tokens [batch_size]
             min_prob: Minimum probability for valid transitions
+            decode_sequences: Whether to decode through vocabulary hierarchy
 
         Returns:
             GeneratedSequences containing tokens and properties
@@ -81,6 +90,7 @@ class SequenceGenerator:
         Notes:
             If topic_mixtures not provided, samples from uniform distribution
             If start_tokens not provided, samples initial tokens uniformly
+            If decode_sequences=True and vocab_hierarchy exists, returns decoded tokens
         """
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -144,8 +154,18 @@ class SequenceGenerator:
                 )
             ).squeeze(-1)
 
+        # Decode sequences if requested and hierarchy exists
+        decoded_tokens = None
+        if decode_sequences and self.vocab_hierarchy is not None:
+            decoded_tokens = self.vocab_hierarchy.decode_sequence(
+                sequences,
+                start_level=0,  # Most abstract level
+                target_level=len(self.vocab_hierarchy),  # Most concrete level
+            )
+
         return GeneratedSequences(
             tokens=sequences,
+            decoded_tokens=decoded_tokens,
             topic_mixtures=topic_mixtures,
             log_probs=log_probs,
         )
@@ -157,6 +177,7 @@ class SequenceGenerator:
         start_color: int,
         temperature: float = 1.0,
         topic_mixtures: torch.Tensor | None = None,
+        decode_sequences: bool = True,
     ) -> GeneratedSequences:
         """
         Generate sequences starting with tokens of a specific color.
@@ -167,6 +188,7 @@ class SequenceGenerator:
             start_color: Color index to start sequences with
             temperature: Controls randomness in sampling
             topic_mixtures: Optional pre-specified topic mixtures
+            decode_sequences: Whether to decode through vocabulary hierarchy
 
         Returns:
             GeneratedSequences with tokens starting from specified color
@@ -187,6 +209,7 @@ class SequenceGenerator:
             temperature=temperature,
             topic_mixtures=topic_mixtures,
             start_tokens=start_tokens,
+            decode_sequences=decode_sequences,
         )
 
     @classmethod
@@ -195,6 +218,7 @@ class SequenceGenerator:
         vocab_size: int,
         n_topics: int,
         color_fractions: list[float],
+        vocab_hierarchy: VocabHierarchy | None = None,
         device: str | None = None,
     ) -> Self:
         """
@@ -204,6 +228,7 @@ class SequenceGenerator:
             vocab_size: Size of token vocabulary
             n_topics: Number of topics
             color_fractions: Relative sizes of color classes
+            vocab_hierarchy: Optional vocabulary hierarchy for decoding
             device: Optional compute device
 
         Returns:
@@ -215,4 +240,4 @@ class SequenceGenerator:
             color_fractions=color_fractions,
             device=device,
         )
-        return cls(transition_model, device=device)
+        return cls(transition_model, vocab_hierarchy=vocab_hierarchy, device=device)
