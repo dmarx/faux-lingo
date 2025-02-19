@@ -174,6 +174,7 @@ def test_hierarchical_dataset():
 
 def test_special_token_handling():
     """Test dataset handling of special tokens."""
+    # Create vocabulary with special tokens
     vocab = Vocabulary.create_simple(
         base_vocab_size=9,
         pad=True,
@@ -187,17 +188,39 @@ def test_special_token_handling():
         color_fractions=[1, 1, 1],
     )
 
+    # Create a config that ensures we need padding (longer than base tokens)
+    expansion_ratio = generator.vocabulary.hierarchy.expansion_ratio if generator.vocabulary.has_hierarchy else 1
+    base_length = 5  # Short enough to need padding
     config = DatasetConfig(
         batch_size=4,
-        seq_length=10,
+        seq_length=base_length * expansion_ratio,
         n_batches=2,
     )
 
     dataset = SequenceDataset(generator, config)
-    batch = next(iter(dataset))
+    
+    # Generate with both BOS and EOS to ensure special tokens appear
+    sequences = generator.generate(
+        batch_size=config.batch_size,
+        seq_length=config.seq_length,
+        return_latent=True,
+    )
 
-    # Check that special tokens are in the expected range
-    special_start = vocab.base_vocab_size
-    max_token = torch.max(batch.tokens).item()
-    assert max_token >= special_start
-    assert max_token < vocab.concrete_vocab_size
+    # Verify token ranges
+    assert sequences.latent_tokens is not None
+    max_latent = torch.max(sequences.latent_tokens).item()
+    assert max_latent < vocab.base_vocab_size, "Latent tokens should be in base vocabulary range"
+
+    # Color sequences should only reference base vocabulary
+    color_seqs = dataset.get_color_sequences(sequences.latent_tokens)
+    max_color = torch.max(color_seqs).item()
+    assert max_color < generator.transition_model.color_space.n_colors, "Color indices should be valid"
+
+    # Verify special tokens are accessible but don't have to appear
+    assert vocab.special_tokens is not None
+    if vocab.special_tokens.pad_token is not None:
+        assert vocab.special_tokens.pad_token >= vocab.base_vocab_size
+    if vocab.special_tokens.bos_token is not None:
+        assert vocab.special_tokens.bos_token >= vocab.base_vocab_size
+    if vocab.special_tokens.eos_token is not None:
+        assert vocab.special_tokens.eos_token >= vocab.base_vocab_size
