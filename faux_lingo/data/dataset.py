@@ -2,7 +2,7 @@
 """Dataset management for sequence generation."""
 
 from dataclasses import dataclass
-from typing import Iterator, TypeAlias
+from typing import Iterator, TypeAlias, TypedDict
 
 import torch
 
@@ -11,6 +11,11 @@ from ..core.generator import GeneratedSequences, SequenceGenerator
 # Type aliases for dimensions
 BatchDim: TypeAlias = int
 SeqLen: TypeAlias = int
+
+class BatchStats(TypedDict):
+    mean_log_prob: float
+    topic_weights: list[float]
+    color_counts: list[int]
 
 
 @dataclass
@@ -136,7 +141,7 @@ class SequenceDataset:
             dtype=torch.long,
         )
 
-    def get_batch_stats(self, batch: GeneratedSequences) -> dict:
+    def get_batch_stats(self, batch: GeneratedSequences) -> BatchStats:
         """Compute statistics for a batch of sequences.
 
         Args:
@@ -147,7 +152,7 @@ class SequenceDataset:
         """
         color_seqs = self.get_color_sequences(batch.tokens)
 
-        stats = {
+        stats: BatchStats = {
             "mean_log_prob": batch.log_probs.mean().item(),
             "topic_weights": batch.topic_mixtures.mean(0).tolist(),
             "color_counts": torch.bincount(
