@@ -17,7 +17,7 @@ Shape: TypeAlias = tuple[int, ...]
 class VocabLevel:
     """
     A single level in the vocabulary hierarchy.
-    
+
     Attributes:
         vocab_size: Number of tokens at this level
         chunk_size: Number of tokens from parent level per token
@@ -80,7 +80,7 @@ class VocabHierarchy:
         self.levels = list(levels)
         self.num_levels = len(self.levels) + 1
         self.decode_tables = self._build_decode_tables()
-        
+
         # Calculate total expansion ratio
         self.expansion_ratio = 1
         for level in self.levels:
