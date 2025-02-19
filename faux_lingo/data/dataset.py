@@ -128,7 +128,7 @@ class SequenceDataset:
         """
         if tokens is None:
             raise ValueError("Cannot get color sequences from None tokens")
-            
+
         return torch.tensor(
             [
                 [
@@ -152,7 +152,7 @@ class SequenceDataset:
         """
         if batch.latent_tokens is None:
             raise ValueError("Cannot compute stats without latent tokens")
-            
+
         color_seqs = self.get_color_sequences(batch.latent_tokens)
 
         stats: BatchStats = {
