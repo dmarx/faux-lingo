@@ -185,37 +185,55 @@ def test_temperature_effect(simple_generator):
     assert all(diff > 0 for diff in entropy_diffs), "Higher temperature should increase entropy"
 
 
-def test_padding(simple_generator):
+def test_padding():
     """Test sequence padding behavior."""
-    vocab = Vocabulary.create_simple(base_vocab_size=9, pad=True)
+    # Create vocabulary with explicit padding token
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=True
+    )
+    
+    # Create generator with short sequence
     generator = SequenceGenerator.create_uniform(
         vocabulary=vocab,
         n_topics=2,
         color_fractions=[1, 1, 1],
     )
 
-    # Generate sequence shorter than requested
-    sequences = generator.generate(batch_size=2, seq_length=10)
+    # Generate sequences slightly longer than needed to force padding
+    sequences = generator.generate(
+        batch_size=2,
+        seq_length=12,
+        return_latent=True,
+    )
     
-    # Check padding token is used correctly
-    padding_token = generator.vocabulary.special_tokens.pad_token
-    assert padding_token is not None
-    padded_positions = sequences.tokens == padding_token
+    # Verify padding token appears
+    pad_token = generator.vocabulary.special_tokens.pad_token
+    assert pad_token is not None
+    padded_positions = sequences.tokens == pad_token
     assert torch.any(padded_positions), "Padding token should be used"
 
 
-def test_no_padding_token_error(simple_vocab):
+def test_no_padding_token_error():
     """Test error when padding needed but no padding token defined."""
     # Create vocabulary without padding token
-    vocab = Vocabulary.create_simple(base_vocab_size=9)  # No padding token
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=False  # Explicitly disable padding
+    )
+    
     generator = SequenceGenerator.create_uniform(
         vocabulary=vocab,
         n_topics=2,
         color_fractions=[1, 1, 1],
     )
 
+    # Should raise error when trying to pad
     with pytest.raises(ValueError, match="Padding token not defined"):
-        generator.generate(batch_size=2, seq_length=10)
+        generator.generate(
+            batch_size=2,
+            seq_length=12,  # Force need for padding
+        )
 
 
 def test_reproducibility(simple_generator):
@@ -261,6 +279,7 @@ def test_bos_eos_tokens():
         bos=True,
         eos=True,
     )
+    
     generator = SequenceGenerator.create_uniform(
         vocabulary=vocab,
         n_topics=2,
@@ -270,10 +289,14 @@ def test_bos_eos_tokens():
     sequences = generator.generate(batch_size=2, seq_length=10)
     
     # First token should be BOS
-    assert torch.all(sequences.tokens[:, 0] == vocab.special_tokens.bos_token)
+    bos_token = vocab.special_tokens.bos_token
+    assert bos_token is not None
+    assert torch.all(sequences.tokens[:, 0] == bos_token)
     
     # Last token should be EOS
-    assert torch.all(sequences.tokens[:, -1] == vocab.special_tokens.eos_token)
+    eos_token = vocab.special_tokens.eos_token
+    assert eos_token is not None
+    assert torch.all(sequences.tokens[:, -1] == eos_token)
 
 
 def test_topic_mixture_validation(simple_generator):
