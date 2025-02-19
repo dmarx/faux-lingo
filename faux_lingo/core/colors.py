@@ -142,11 +142,12 @@ class ColorSpace:
         if not 0 <= token_idx < self.vocab_size:
             raise ValueError(f"Invalid token_idx {token_idx}")
         # Find which boundary region contains the token
-        # Note: token_idx >= boundaries[i] and token_idx < boundaries[i+1]
-        # means token_idx is in color i
         for i in range(self.n_colors):
             if token_idx < self.mapping.boundaries[i + 1]:
                 return i
+        # This should never happen due to the boundary check above
+        raise RuntimeError("Failed to find color for token")
+
 
     def get_color_range(self, color_idx: int) -> tuple[int, int]:
         """
@@ -163,10 +164,9 @@ class ColorSpace:
         """
         if not 0 <= color_idx < self.n_colors:
             raise ValueError(f"Invalid color_idx {color_idx}")
-        return (
-            self.mapping.boundaries[color_idx].item(),
-            self.mapping.boundaries[color_idx + 1].item(),
-        )
+        start = int(self.mapping.boundaries[color_idx].item())
+        end = int(self.mapping.boundaries[color_idx + 1].item())
+        return (start, end)
 
     def get_transition_mask(self) -> torch.Tensor:
         """
