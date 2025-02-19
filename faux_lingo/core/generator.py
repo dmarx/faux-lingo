@@ -77,7 +77,7 @@ class SequenceGenerator:
 
         Args:
             batch_size: Number of sequences to generate
-            seq_length: Length of each sequence
+            seq_length: Desired length of final token sequences
             temperature: Controls randomness in sampling
             topic_mixtures: Optional pre-specified topic mixtures [batch_size, n_topics]
             start_tokens: Optional initial tokens [batch_size]
@@ -88,10 +88,14 @@ class SequenceGenerator:
             GeneratedSequences containing tokens and properties
 
         Notes:
-            If topic_mixtures not provided, samples from uniform distribution
-            If start_tokens not provided, samples initial tokens uniformly
-            If vocab_hierarchy exists, returns decoded token sequences
+            If vocab_hierarchy exists, seq_length specifies the length of the final
+            decoded sequences. The length of latent sequences will be adjusted to
+            produce the desired output length.
         """
+        # Compute required latent sequence length
+        latent_length = (seq_length if self.vocab_hierarchy is None 
+                        else self.vocab_hierarchy.compute_latent_length(seq_length))
+
         # Get or generate topic mixtures
         if topic_mixtures is None:
             n_topics = self.transition_model.topic_space.n_topics
@@ -114,7 +118,7 @@ class SequenceGenerator:
 
         # Initialize sequences
         latent_sequences = torch.zeros(
-            (batch_size, seq_length), dtype=torch.long, device=self.device
+            (batch_size, latent_length), dtype=torch.long, device=self.device
         )
 
         # Initialize log probabilities
@@ -134,7 +138,7 @@ class SequenceGenerator:
             )
 
         # Generate rest of sequences
-        for t in range(1, seq_length):
+        for t in range(1, latent_length):
             # Get transition probabilities for current tokens
             current_probs = transitions[
                 torch.arange(batch_size, device=self.device),
@@ -162,6 +166,20 @@ class SequenceGenerator:
                 start_level=0,  # Most abstract level
                 target_level=len(self.vocab_hierarchy),  # Most concrete level
             )
+            
+            # Verify or adjust output sequence length
+            actual_length = tokens.shape[1]
+            if actual_length < seq_length:
+                # Pad if necessary (rare case due to rounding)
+                padding = torch.zeros(
+                    (batch_size, seq_length - actual_length),
+                    dtype=torch.long,
+                    device=self.device
+                )
+                tokens = torch.cat([tokens, padding], dim=1)
+            elif actual_length > seq_length:
+                # Truncate if necessary
+                tokens = tokens[:, :seq_length]
 
         return GeneratedSequences(
             tokens=tokens,
@@ -184,7 +202,7 @@ class SequenceGenerator:
 
         Args:
             batch_size: Number of sequences to generate
-            seq_length: Length of each sequence
+            seq_length: Desired length of final token sequences
             start_color: Color index to start sequences with
             temperature: Controls randomness in sampling
             topic_mixtures: Optional pre-specified topic mixtures
