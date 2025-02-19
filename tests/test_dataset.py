@@ -6,13 +6,23 @@ import torch
 
 from faux_lingo.core.generator import SequenceGenerator
 from faux_lingo.data.dataset import DatasetConfig, SequenceDataset
+from faux_lingo.core.vocabulary import Vocabulary
 
 
 @pytest.fixture
-def simple_generator():
+def simple_vocab():
+    """Create simple vocabulary for testing."""
+    return Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=True
+    )
+
+
+@pytest.fixture
+def simple_generator(simple_vocab):
     """Create a simple generator for testing."""
     return SequenceGenerator.create_uniform(
-        vocab_size=9,
+        vocabulary=simple_vocab,
         n_topics=2,
         color_fractions=[1, 1, 1],  # Three equal color classes
     )
@@ -62,8 +72,8 @@ def test_color_sequence_conversion(simple_generator, simple_config):
     dataset = SequenceDataset(simple_generator, simple_config)
     batch = next(iter(dataset))
 
-    color_seqs = dataset.get_color_sequences(batch.tokens)
-    assert color_seqs.shape == batch.tokens.shape
+    color_seqs = dataset.get_color_sequences(batch.latent_tokens)
+    assert color_seqs.shape == batch.latent_tokens.shape
 
     # Check color indices are valid
     assert torch.all(color_seqs >= 0)
@@ -93,7 +103,7 @@ def test_color_constrained_generation(simple_generator, simple_config):
     start_color = 1
 
     batch = dataset.generate_batch(start_color=start_color)
-    color_seqs = dataset.get_color_sequences(batch.tokens)
+    color_seqs = dataset.get_color_sequences(batch.latent_tokens)
 
     # Check first token of each sequence is correct color
     assert torch.all(color_seqs[:, 0] == start_color)
@@ -126,5 +136,68 @@ def test_device_handling(simple_generator, simple_config):
     assert batch.log_probs.device.type == dataset.device
 
     # Test color sequence conversion maintains device
-    color_seqs = dataset.get_color_sequences(batch.tokens)
+    color_seqs = dataset.get_color_sequences(batch.latent_tokens)
     assert color_seqs.device.type == dataset.device
+
+
+def test_hierarchical_dataset():
+    """Test dataset with hierarchical vocabulary."""
+    vocab = Vocabulary.create_hierarchical(
+        base_vocab_size=6,
+        level_configs=[
+            (12, 2),  # Level 1: 12 tokens, chunks of 2
+            (24, 2),  # Level 2: 24 tokens, chunks of 2
+        ],
+        pad=True
+    )
+
+    generator = SequenceGenerator.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1],
+    )
+
+    config = DatasetConfig(
+        batch_size=4,
+        seq_length=16,  # Multiple of total expansion ratio
+        n_batches=2,
+    )
+
+    dataset = SequenceDataset(generator, config)
+    batch = next(iter(dataset))
+
+    # Check sequence lengths
+    assert batch.tokens.shape == (config.batch_size, config.seq_length)
+    expected_latent_length = config.seq_length // vocab.hierarchy.expansion_ratio
+    assert batch.latent_tokens.shape == (config.batch_size, expected_latent_length)
+
+
+def test_special_token_handling():
+    """Test dataset handling of special tokens."""
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=True,
+        bos=True,
+        eos=True,
+    )
+
+    generator = SequenceGenerator.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1, 1],
+    )
+
+    config = DatasetConfig(
+        batch_size=4,
+        seq_length=10,
+        n_batches=2,
+    )
+
+    dataset = SequenceDataset(generator, config)
+    batch = next(iter(dataset))
+
+    # Check that special tokens are in the expected range
+    special_start = vocab.base_vocab_size
+    max_token = torch.max(batch.tokens).item()
+    assert max_token >= special_start
+    assert max_token < vocab.concrete_vocab_size
