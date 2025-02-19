@@ -30,7 +30,7 @@ class BuilderConfig:
     vocab_sizes: list[int]  # Each level's vocabulary size
     seed: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration."""
         if self.token_vocab_size < 1:
             raise ValueError("token_vocab_size must be positive")
