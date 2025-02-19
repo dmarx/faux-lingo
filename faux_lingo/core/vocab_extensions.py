@@ -27,7 +27,7 @@ class MultiMappingLevel:
     chunk_size: int
     sequences: dict[TokenIdx, list[AugmentedSeq]]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate level properties."""
         if self.vocab_size < 1:
             raise ValueError("vocab_size must be positive")
@@ -172,7 +172,7 @@ class AugmentationConfig:
     transposition_prob: float = 0.05
     seed: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration."""
         probs = [
             self.deletion_prob,
@@ -239,41 +239,45 @@ class SequenceAugmenter:
                 seq = op(seq)
 
         return tuple(seq)
-
+        
     def _delete(self, seq: list[int]) -> list[int]:
         """Randomly delete a token."""
         if len(seq) <= 1:
             return seq
-        idx = torch.randint(len(seq), (1,)).item()
-        return seq[:idx] + seq[idx + 1 :]
+        idx = int(torch.randint(len(seq), (1,)).item())
+        return seq[:idx] + seq[idx + 1:]
 
     def _insert(self, seq: list[int]) -> list[int]:
         """Insert random token."""
-        idx = torch.randint(len(seq) + 1, (1,)).item()
-        token = torch.randint(self.vocab_size, (1,)).item()
-        return seq[:idx] + [token] + seq[idx:]
+        idx = int(torch.randint(len(seq) + 1, (1,)).item())
+        token = int(torch.randint(self.vocab_size, (1,)).item())
+        result = seq.copy()
+        result.insert(idx, token)
+        return result
 
     def _substitute(self, seq: list[int]) -> list[int]:
         """Replace token with a different random token."""
         if not seq:
             return seq
-        idx = torch.randint(len(seq), (1,)).item()
+        idx = int(torch.randint(len(seq), (1,)).item())
         current = seq[idx]
         # Generate new token until it's different from current
         while True:
-            token = torch.randint(self.vocab_size, (1,)).item()
+            token = int(torch.randint(self.vocab_size, (1,)).item())
             if token != current:
                 break
-        seq[idx] = token
-        return seq
+        result = seq.copy()
+        result[idx] = token
+        return result
 
     def _transpose(self, seq: list[int]) -> list[int]:
         """Swap adjacent tokens."""
         if len(seq) <= 1:
             return seq
-        idx = torch.randint(len(seq) - 1, (1,)).item()
-        seq[idx], seq[idx + 1] = seq[idx + 1], seq[idx]
-        return seq
+        idx = int(torch.randint(len(seq) - 1, (1,)).item())
+        result = seq.copy()
+        result[idx], result[idx + 1] = result[idx + 1], result[idx]
+        return result
 
 
 def convert_to_multi_mapping(
