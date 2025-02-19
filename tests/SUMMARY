@@ -1,0 +1,1484 @@
+---
+File: tests/test_colors.py
+---
+# faux_lingo/tests/test_colors.py
+"""Tests for color space functionality."""
+
+import pytest
+import torch
+
+from faux_lingo.core.colors import ColorSpace
+
+
+def test_normalization():
+    """Test that color fractions are properly normalized."""
+    # Test with list input
+    space = ColorSpace(color_fractions=[3, 2, 1], vocab_size=60)
+    expected = torch.tensor([0.5, 0.333333, 0.166667], dtype=torch.float32)
+    assert torch.allclose(space.mapping.fractions, expected, rtol=1e-5)
+
+    # Test with tensor input
+    space = ColorSpace(color_fractions=torch.tensor([1.0, 2.0, 3.0]), vocab_size=60)
+    expected = torch.tensor([0.166667, 0.333333, 0.5], dtype=torch.float32)
+    assert torch.allclose(space.mapping.fractions, expected, rtol=1e-5)
+
+
+def test_boundaries():
+    """Test token boundary calculations."""
+    space = ColorSpace(color_fractions=[1, 1, 1], vocab_size=100)
+
+    # Check boundary points
+    assert space.get_color_range(0) == (0, 33)  # First third
+    assert space.get_color_range(1) == (33, 66)  # Second third
+    assert space.get_color_range(2) == (66, 100)  # Last third (gets remainder)
+
+    # Test boundary adjustments
+    space = ColorSpace(color_fractions=[1, 1], vocab_size=7)
+    assert space.get_color_range(1)[1] == 7  # Last range should end at vocab_size
+
+
+def test_color_lookup():
+    """Test token to color mapping."""
+    space = ColorSpace(color_fractions=[1, 2, 1], vocab_size=40)
+
+    # With fractions [1,2,1], boundaries should be at [0, 10, 30, 40]
+    # Print actual boundaries for debugging
+    print(f"Boundaries: {space.mapping.boundaries}")
+    print(f"Color of token 10: {space.get_color(10)}")
+    print(f"Fractions: {space.mapping.fractions}")
+
+    # Test boundaries
+    assert space.get_color(0) == 0  # First color
+    assert space.get_color(10) == 1  # Middle color
+    assert space.get_color(39) == 2  # Last color
+
+    # Test invalid indices
+    with pytest.raises(ValueError):
+        space.get_color(-1)
+    with pytest.raises(ValueError):
+        space.get_color(40)
+
+
+def test_transition_weights():
+    """Test transition weight validation and mask creation."""
+    weights = torch.tensor([[1.0, 0.5, 0.0], [0.5, 1.0, 0.5], [0.0, 0.5, 1.0]])
+
+    space = ColorSpace(
+        color_fractions=[1, 1, 1], vocab_size=9, transition_weights=weights
+    )
+
+    mask = space.get_transition_mask()
+
+    # Check mask shape
+    assert mask.shape == (9, 9)
+
+    # Check block structure
+    block_size = 3
+    for i in range(3):
+        for j in range(3):
+            block = mask[
+                i * block_size : (i + 1) * block_size,
+                j * block_size : (j + 1) * block_size,
+            ]
+            assert torch.all(block == weights[i, j])
+
+    # Test invalid weights
+    with pytest.raises(ValueError):
+        ColorSpace(
+            color_fractions=[1, 1],
+            vocab_size=10,
+            transition_weights=weights,  # Wrong shape for n_colors=2
+        )
+
+    with pytest.raises(ValueError):
+        ColorSpace(
+            color_fractions=[1, 1],
+            vocab_size=10,
+            transition_weights=torch.tensor(
+                [[-1.0, 1.0], [1.0, -1.0]]
+            ),  # Negative weights
+        )
+
+
+def test_save_load(tmp_path):
+    """Test serialization of color space."""
+    weights = torch.tensor([[1.0, 0.5], [0.5, 1.0]])
+    original = ColorSpace(
+        color_fractions=[2, 3], vocab_size=100, transition_weights=weights
+    )
+
+    path = tmp_path / "color_space.pt"
+
+    # Save and load
+    original.save(path)
+    loaded = ColorSpace.load(path)
+
+    # Verify properties preserved
+    assert original.vocab_size == loaded.vocab_size
+    assert torch.allclose(original.mapping.fractions, loaded.mapping.fractions)
+    assert torch.allclose(original.mapping.boundaries, loaded.mapping.boundaries)
+    assert torch.allclose(original.transition_weights, loaded.transition_weights)
+
+
+def test_device_handling():
+    """Test device placement and movement."""
+    # Default to CPU
+    space = ColorSpace(color_fractions=[1, 1], vocab_size=10)
+    assert space.mapping.boundaries.device.type == "cpu"
+    assert space.transition_weights.device.type == "cpu"
+
+    # Test device specification
+    space = ColorSpace(color_fractions=[1, 1], vocab_size=10, device="cpu")
+    assert space.mapping.boundaries.device.type == "cpu"
+
+    # Test mask device matches space
+    mask = space.get_transition_mask()
+    assert mask.device.type == "cpu"
+
+
+
+---
+File: tests/test_dataset.py
+---
+# faux_lingo/tests/test_dataset.py
+"""Tests for dataset generation functionality."""
+
+import pytest
+import torch
+
+from faux_lingo.core.generator import SequenceGenerator
+from faux_lingo.data.dataset import DatasetConfig, SequenceDataset
+
+
+@pytest.fixture
+def simple_generator():
+    """Create a simple generator for testing."""
+    return SequenceGenerator.create_uniform(
+        vocab_size=9,
+        n_topics=2,
+        color_fractions=[1, 1, 1],  # Three equal color classes
+    )
+
+
+@pytest.fixture
+def simple_config():
+    """Create a basic dataset configuration."""
+    return DatasetConfig(
+        batch_size=4,
+        seq_length=10,
+        n_batches=3,
+        seed=42,
+    )
+
+
+def test_dataset_iteration(simple_generator, simple_config):
+    """Test basic dataset iteration."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+
+    # Check total length
+    assert len(dataset) == simple_config.n_batches
+
+    # Check batch shapes
+    batches = list(dataset)
+    assert len(batches) == simple_config.n_batches
+    for batch in batches:
+        assert batch.tokens.shape == (simple_config.batch_size, simple_config.seq_length)
+        assert batch.topic_mixtures.shape == (simple_config.batch_size, dataset.n_topics)
+
+
+def test_reproducibility(simple_generator, simple_config):
+    """Test that sequence generation is reproducible with same seed."""
+    dataset1 = SequenceDataset(simple_generator, simple_config)
+    batch1 = next(iter(dataset1))
+
+    dataset2 = SequenceDataset(simple_generator, simple_config)
+    batch2 = next(iter(dataset2))
+
+    assert torch.all(batch1.tokens == batch2.tokens)
+    assert torch.allclose(batch1.log_probs, batch2.log_probs)
+    assert torch.allclose(batch1.topic_mixtures, batch2.topic_mixtures)
+
+
+def test_color_sequence_conversion(simple_generator, simple_config):
+    """Test conversion of tokens to color sequences."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+    batch = next(iter(dataset))
+
+    color_seqs = dataset.get_color_sequences(batch.tokens)
+    assert color_seqs.shape == batch.tokens.shape
+
+    # Check color indices are valid
+    assert torch.all(color_seqs >= 0)
+    assert torch.all(color_seqs < dataset.n_colors)
+
+
+def test_batch_stats(simple_generator, simple_config):
+    """Test batch statistics computation."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+    batch = next(iter(dataset))
+    stats = dataset.get_batch_stats(batch)
+
+    # Check required statistics are present
+    assert "mean_log_prob" in stats
+    assert "topic_weights" in stats
+    assert "color_counts" in stats
+
+    # Check shapes and values
+    assert len(stats["topic_weights"]) == dataset.n_topics
+    assert len(stats["color_counts"]) == dataset.n_colors
+    assert sum(stats["color_counts"]) == simple_config.batch_size * simple_config.seq_length
+
+
+def test_color_constrained_generation(simple_generator, simple_config):
+    """Test generation with specific start color."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+    start_color = 1
+
+    batch = dataset.generate_batch(start_color=start_color)
+    color_seqs = dataset.get_color_sequences(batch.tokens)
+
+    # Check first token of each sequence is correct color
+    assert torch.all(color_seqs[:, 0] == start_color)
+
+
+def test_topic_constrained_generation(simple_generator, simple_config):
+    """Test generation with specific topic mixtures."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+    
+    # Create specific topic mixture
+    mixtures = torch.tensor([
+        [0.8, 0.2],  # Strong bias to first topic
+        [0.2, 0.8],  # Strong bias to second topic
+        [0.5, 0.5],  # Equal mixture
+        [1.0, 0.0],  # Pure first topic
+    ])
+
+    batch = dataset.generate_batch(topic_mixtures=mixtures)
+    assert torch.allclose(batch.topic_mixtures, mixtures)
+
+
+def test_device_handling(simple_generator, simple_config):
+    """Test device placement and consistency."""
+    dataset = SequenceDataset(simple_generator, simple_config)
+    batch = next(iter(dataset))
+
+    # Check all tensors are on same device
+    assert batch.tokens.device.type == dataset.device
+    assert batch.topic_mixtures.device.type == dataset.device
+    assert batch.log_probs.device.type == dataset.device
+
+    # Test color sequence conversion maintains device
+    color_seqs = dataset.get_color_sequences(batch.tokens)
+    assert color_seqs.device.type == dataset.device
+
+
+
+---
+File: tests/test_entropy.py
+---
+# faux_lingo/tests/test_entropy.py
+"""Tests for entropy analysis functionality."""
+
+import pytest
+import torch
+
+from faux_lingo.analysis.entropy import EntropyAnalyzer, EntropyMetrics
+from faux_lingo.core.generator import GeneratedSequences, SequenceGenerator
+
+
+@pytest.fixture
+def simple_analyzer():
+    """Create analyzer with simple uniform generator."""
+    generator = SequenceGenerator.create_uniform(
+        vocab_size=9,
+        n_topics=2,
+        color_fractions=[1, 1, 1],  # Three equal color classes
+    )
+    return EntropyAnalyzer(generator.transition_model)
+
+
+@pytest.fixture
+def sample_sequences(simple_analyzer):
+    """Generate sample sequences for testing."""
+    generator = SequenceGenerator(simple_analyzer.transition_model)
+    return generator.generate(batch_size=10, seq_length=20)
+
+
+def test_metrics_zero():
+    """Test zero initialization of metrics."""
+    metrics = EntropyMetrics.zero()
+    assert metrics.color_entropy == 0.0
+    assert metrics.topic_entropy == 0.0
+    assert metrics.token_entropy == 0.0
+
+
+def test_color_entropy(simple_analyzer):
+    """Test color entropy computation with different transition rules."""
+    # Generate sequences with uniform transitions
+    generator = SequenceGenerator(simple_analyzer.transition_model)
+    uniform_sequences = generator.generate(batch_size=10, seq_length=20)
+    uniform_metrics = simple_analyzer.analyze_sequences(uniform_sequences)
+
+    # Generate sequences with deterministic transitions
+    det_weights = torch.eye(3)  # Only self-transitions allowed
+    simple_analyzer.transition_model.color_space.transition_weights = det_weights
+    det_generator = SequenceGenerator(simple_analyzer.transition_model)
+    det_sequences = det_generator.generate(batch_size=10, seq_length=20)
+    det_metrics = simple_analyzer.analyze_sequences(det_sequences)
+
+    # Deterministic transitions should have lower entropy
+    assert det_metrics.color_entropy < uniform_metrics.color_entropy
+
+    # Entropy should be non-negative and bounded
+    assert det_metrics.color_entropy >= 0
+    max_entropy = torch.log2(torch.tensor(3.0))  # log2(num_colors)
+    assert det_metrics.color_entropy <= max_entropy
+
+
+def test_topic_entropy(simple_analyzer):
+    """Test topic entropy computation."""
+    # Test with uniform mixture
+    uniform_mix = torch.ones(4, 2) / 2
+    sequences = GeneratedSequences(
+        tokens=torch.zeros(4, 10, dtype=torch.long),  # Dummy tokens
+        topic_mixtures=uniform_mix,
+        log_probs=torch.zeros(4),
+    )
+
+    metrics = simple_analyzer.analyze_sequences(sequences)
+    expected = torch.log2(torch.tensor(2.0))  # log2(num_topics)
+    assert torch.isclose(torch.tensor(metrics.topic_entropy), expected, atol=1e-6)
+
+    # Test with deterministic mixture
+    det_mix = torch.zeros(4, 2)
+    det_mix[:, 0] = 1.0  # All weight on first topic
+    sequences.topic_mixtures = det_mix
+
+    metrics = simple_analyzer.analyze_sequences(sequences)
+    assert metrics.topic_entropy == 0.0
+
+
+def test_token_entropy(simple_analyzer, sample_sequences):
+    """Test token entropy computation."""
+    metrics = simple_analyzer.analyze_sequences(sample_sequences)
+
+    # Entropy should be non-negative and bounded
+    assert metrics.token_entropy >= 0
+    max_entropy = torch.log2(torch.tensor(9.0))  # log2(vocab_size)
+    assert metrics.token_entropy <= max_entropy
+
+    # Test with repeated tokens
+    repeated = torch.zeros_like(sample_sequences.tokens)
+    sequences = GeneratedSequences(
+        tokens=repeated,
+        topic_mixtures=sample_sequences.topic_mixtures,
+        log_probs=sample_sequences.log_probs,
+    )
+
+    metrics = simple_analyzer.analyze_sequences(sequences)
+    assert metrics.token_entropy == 0.0
+
+
+def test_device_handling(simple_analyzer, sample_sequences):
+    """Test device placement and consistency."""
+    # All computations should happen on analyzer's device
+    metrics = simple_analyzer.analyze_sequences(sample_sequences)
+
+    # Move sequences to different device
+    cpu_sequences = GeneratedSequences(
+        tokens=sample_sequences.tokens.cpu(),
+        topic_mixtures=sample_sequences.topic_mixtures.cpu(),
+        log_probs=sample_sequences.log_probs.cpu(),
+    )
+
+    # Should still work and give same results
+    cpu_metrics = simple_analyzer.analyze_sequences(cpu_sequences)
+    assert metrics.color_entropy == cpu_metrics.color_entropy
+    assert metrics.topic_entropy == cpu_metrics.topic_entropy
+    assert metrics.token_entropy == cpu_metrics.token_entropy
+
+
+
+---
+File: tests/test_generator.py
+---
+# faux_lingo/tests/test_generator.py
+"""Tests for sequence generation."""
+
+import pytest
+import torch
+
+from faux_lingo.core.generator import SequenceGenerator
+
+
+@pytest.fixture
+def simple_generator():
+    """Create a simple generator for testing."""
+    return SequenceGenerator.create_uniform(
+        vocab_size=9,
+        n_topics=2,
+        color_fractions=[1, 1, 1],  # Three equal color classes
+    )
+
+
+def test_sequence_shapes(simple_generator):
+    """Test output shapes from generation."""
+    batch_size = 4
+    seq_length = 10
+
+    sequences = simple_generator.generate(
+        batch_size=batch_size,
+        seq_length=seq_length,
+    )
+
+    assert sequences.tokens.shape == (batch_size, seq_length)
+    assert sequences.topic_mixtures.shape == (batch_size, 2)  # 2 topics
+    assert sequences.log_probs.shape == (batch_size,)
+
+
+def test_token_ranges(simple_generator):
+    """Test that generated tokens are within vocabulary."""
+    sequences = simple_generator.generate(
+        batch_size=10,
+        seq_length=20,
+    )
+
+    assert torch.all(sequences.tokens >= 0)
+    assert torch.all(sequences.tokens < simple_generator.vocab_size)
+
+
+def test_color_start(simple_generator):
+    """Test generation with specific start color."""
+    batch_size = 5
+    color_idx = 1  # Middle color class
+
+    sequences = simple_generator.generate_with_color(
+        batch_size=batch_size,
+        seq_length=10,
+        start_color=color_idx,
+    )
+
+    # Get expected token range for color
+    start_idx, end_idx = simple_generator.transition_model.color_space.get_color_range(
+        color_idx
+    )
+
+    # Check first tokens are in correct range
+    first_tokens = sequences.tokens[:, 0]
+    assert torch.all(first_tokens >= start_idx)
+    assert torch.all(first_tokens < end_idx)
+
+
+def test_temperature_effect(simple_generator):
+    """Test that temperature effect is consistent across runs."""
+    batch_size = 100
+    seq_length = 20
+    n_trials = 3
+
+    entropy_diffs = []  # Store hot - cold entropy differences
+
+    for seed in range(n_trials):
+        torch.manual_seed(seed)
+
+        # Generate with different temperatures
+        cold_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=0.1,
+        )
+        hot_seqs = simple_generator.generate(
+            batch_size=batch_size,
+            seq_length=seq_length,
+            temperature=10.0,
+        )
+
+        # Compare transition statistics
+        def get_transition_counts(tokens: torch.Tensor) -> torch.Tensor:
+            """Get counts of token-to-token transitions."""
+            counts = torch.zeros(
+                (simple_generator.vocab_size, simple_generator.vocab_size),
+                device=tokens.device,
+            )
+            for i in range(tokens.shape[0]):  # For each sequence
+                for t in range(tokens.shape[1] - 1):  # For each transition
+                    curr, next = tokens[i, t], tokens[i, t + 1]
+                    counts[curr, next] += 1
+            return counts
+
+        # Get transition counts and convert to probabilities
+        cold_counts = get_transition_counts(cold_seqs.tokens)
+        hot_counts = get_transition_counts(hot_seqs.tokens)
+
+        cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
+        hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
+
+        # Calculate entropies
+        def get_entropy(probs: torch.Tensor) -> float:
+            """Calculate average entropy of transition distributions."""
+            return -(probs * torch.log(probs + 1e-10)).sum(-1).mean().item()
+
+        cold_entropy = get_entropy(cold_probs)
+        hot_entropy = get_entropy(hot_probs)
+
+        print(
+            f"Trial {seed}: cold={cold_entropy:.4f}, hot={hot_entropy:.4f}, diff={hot_entropy-cold_entropy:.4f}"
+        )
+        entropy_diffs.append(hot_entropy - cold_entropy)
+
+    # Check if the effect is consistent
+    signs = [diff > 0 for diff in entropy_diffs]
+    assert all(signs) or not any(
+        signs
+    ), "Temperature effect should be consistent across trials"
+
+
+def test_topic_mixture_validation(simple_generator):
+    """Test validation of topic mixture inputs."""
+    # Wrong batch size
+    bad_mixtures = torch.ones(3, 2) / 2  # 3 sequences when asking for 2
+
+    with pytest.raises(ValueError):
+        simple_generator.generate(
+            batch_size=2,
+            seq_length=10,
+            topic_mixtures=bad_mixtures,
+        )
+
+
+def test_start_token_validation(simple_generator):
+    """Test validation of start token inputs."""
+    # Wrong shape
+    bad_tokens = torch.zeros(3)  # 3 tokens when asking for 2 sequences
+
+    with pytest.raises(ValueError):
+        simple_generator.generate(
+            batch_size=2,
+            seq_length=10,
+            start_tokens=bad_tokens,
+        )
+
+
+def test_color_validation(simple_generator):
+    """Test validation of color inputs."""
+    with pytest.raises(ValueError):
+        simple_generator.generate_with_color(
+            batch_size=2,
+            seq_length=10,
+            start_color=99,  # Invalid color index
+        )
+
+
+def test_log_probability_consistency(simple_generator):
+    """Test that log probabilities are consistent with transitions."""
+    # Generate single sequence for simplicity
+    batch_size = 1
+    seq_length = 5
+    temperature = 1.0
+
+    # Generate with specific topic mixture
+    mixture = torch.tensor([[0.7, 0.3]], device=simple_generator.device)
+    sequences = simple_generator.generate(
+        batch_size=batch_size,
+        seq_length=seq_length,
+        topic_mixtures=mixture,
+        temperature=temperature,
+    )
+
+    # Get transition matrix
+    transitions = simple_generator.transition_model.generate(
+        mixture,
+        temperature=temperature,
+    )
+
+    # Manually compute log probability
+    manual_log_prob = 0.0
+    for t in range(1, seq_length):
+        prev_token = sequences.tokens[0, t - 1]
+        curr_token = sequences.tokens[0, t]
+        prob = transitions[0, prev_token, curr_token]
+        manual_log_prob += torch.log(prob).item()
+
+    assert torch.allclose(
+        sequences.log_probs[0],
+        torch.tensor(manual_log_prob, device=simple_generator.device),
+        rtol=1e-5,
+    )
+
+
+def test_reproducibility(simple_generator):
+    """Test that sequences are reproducible with same seed."""
+    torch.manual_seed(42)
+    seq1 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+    )
+
+    torch.manual_seed(42)
+    seq2 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+    )
+
+    assert torch.all(seq1.tokens == seq2.tokens)
+    assert torch.allclose(seq1.log_probs, seq2.log_probs)
+
+
+
+---
+File: tests/test_topics.py
+---
+# Tests in faux_lingo/tests/test_topics.py
+"""Tests for topic vector space functionality."""
+
+from pathlib import Path
+
+import pytest
+import torch
+
+from faux_lingo.core.topics import TopicVectorSpace
+
+
+def test_init_validation():
+    """Test input validation during initialization."""
+    with pytest.raises(ValueError):
+        # n_topics > vocab_size not allowed
+        TopicVectorSpace(n_topics=5, vocab_size=3)
+
+
+def test_vector_properties():
+    """Test that topic vectors have required mathematical properties."""
+    space = TopicVectorSpace(n_topics=3, vocab_size=5)
+    vectors = space.vectors
+
+    # Test unit length
+    norms = torch.linalg.norm(vectors, dim=1)
+    assert torch.allclose(norms, torch.ones_like(norms))
+
+    # Test orthogonality
+    gram = vectors @ vectors.T
+    identity = torch.eye(3, device=vectors.device)
+    assert torch.allclose(gram, identity, atol=1e-6)
+
+
+def test_distribution_shape():
+    """Test output shape of get_distribution."""
+    space = TopicVectorSpace(n_topics=3, vocab_size=5)
+
+    # Single mixture
+    mixture = torch.ones(3) / 3  # Uniform mixture
+    dist = space.get_distribution(mixture)
+    assert dist.shape == (5,)
+
+    # Batch of mixtures
+    mixtures = torch.ones(4, 3) / 3  # Batch of uniform mixtures
+    dists = space.get_distribution(mixtures)
+    assert dists.shape == (4, 5)
+
+
+def test_save_load(tmp_path):
+    """Test serialization of topic vectors."""
+    original = TopicVectorSpace(n_topics=3, vocab_size=5)
+    path = tmp_path / "topics.pt"
+
+    # Save and load
+    original.save(path)
+    loaded = TopicVectorSpace.load(path)
+
+    # Verify properties preserved
+    assert torch.allclose(original.vectors, loaded.vectors)
+    assert original.n_topics == loaded.n_topics
+    assert original.vocab_size == loaded.vocab_size
+
+
+def test_device_handling():
+    """Test device placement and movement."""
+    # Default to CPU
+    space = TopicVectorSpace(n_topics=2, vocab_size=4)
+    assert space.vectors.device.type == "cpu"
+
+    # Handle CPU mixtures with CPU space
+    mixture = torch.ones(2) / 2
+    dist = space.get_distribution(mixture)
+    assert dist.device.type == "cpu"
+
+    # Test device specification on load
+    path = Path("tmp_topics.pt")
+    space.save(path)
+    loaded = TopicVectorSpace.load(path, device="cpu")
+    assert loaded.vectors.device.type == "cpu"
+    path.unlink()  # Cleanup
+
+
+def test_random_state():
+    """Test reproducibility of random initialization."""
+    torch.manual_seed(42)
+    space1 = TopicVectorSpace(n_topics=2, vocab_size=4)
+
+    torch.manual_seed(42)
+    space2 = TopicVectorSpace(n_topics=2, vocab_size=4)
+
+    assert torch.allclose(space1.vectors, space2.vectors)
+
+
+
+---
+File: tests/test_transitions.py
+---
+# faux_lingo/tests/test_transitions.py
+"""Tests for transition matrix generation."""
+
+import pytest
+import torch
+
+from faux_lingo.core.colors import ColorSpace
+from faux_lingo.core.topics import TopicVectorSpace
+from faux_lingo.core.transitions import TransitionMatrix
+
+
+@pytest.fixture
+def simple_matrix():
+    """Create a simple transition matrix for testing."""
+    return TransitionMatrix.create_uniform(
+        vocab_size=9,
+        n_topics=2,
+        color_fractions=[1, 1, 1],  # Three equal-sized color classes
+    )
+
+
+def test_initialization():
+    """Test constructor validation."""
+    # Create spaces with mismatched vocab sizes
+    topic_space = TopicVectorSpace(n_topics=2, vocab_size=10)
+    color_space = ColorSpace(color_fractions=[1, 1], vocab_size=12)
+
+    # Should raise error
+    with pytest.raises(ValueError, match="Vocab size mismatch"):
+        TransitionMatrix(topic_space, color_space)
+
+
+def test_uniform_creation():
+    """Test creation of uniform transition matrix."""
+    matrix = TransitionMatrix.create_uniform(
+        vocab_size=6,
+        n_topics=2,
+        color_fractions=[1, 1],  # Two equal color classes
+    )
+
+    assert matrix.vocab_size == 6
+    assert matrix.topic_space.n_topics == 2
+    assert matrix.color_space.n_colors == 2
+
+
+def test_probability_properties(simple_matrix):
+    """Test that generated matrices have valid probability properties."""
+    # Generate matrix with uniform mixture
+    mixture = torch.ones(1, 2) / 2  # Equal mixture of two topics
+    transitions = simple_matrix.generate(mixture)
+
+    # Check shape
+    assert transitions.shape == (1, 9, 9)
+
+    # Check row sums
+    row_sums = transitions.sum(dim=-1)
+    assert torch.allclose(row_sums, torch.ones_like(row_sums))
+
+    # Check non-negativity
+    assert torch.all(transitions >= 0)
+
+
+def test_color_constraints(simple_matrix):
+    """Test that color transition constraints are respected."""
+    # Set up transition weights that forbid some transitions
+    weights = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],  # Color 0 can only transition to itself
+            [0.0, 1.0, 0.0],  # Color 1 can only transition to itself
+            [0.0, 0.0, 1.0],  # Color 2 can only transition to itself
+        ]
+    )
+    simple_matrix.color_space.transition_weights = weights
+
+    # Generate transitions
+    mixture = torch.ones(1, 2) / 2
+    transitions = simple_matrix.generate(mixture)
+
+    # Check block structure
+    for i in range(3):  # For each color
+        for j in range(3):  # For each target color
+            if i != j:  # Off-diagonal blocks should be zero
+                start_i = i * 3
+                end_i = (i + 1) * 3
+                start_j = j * 3
+                end_j = (j + 1) * 3
+                block = transitions[0, start_i:end_i, start_j:end_j]
+                assert torch.all(block == 0)
+
+
+def test_temperature_effect(simple_matrix):
+    """Test that temperature affects distribution entropy."""
+    mixture = torch.ones(1, 2) / 2
+
+    # Generate with different temperatures
+    cold = simple_matrix.generate(mixture, temperature=0.1)
+    hot = simple_matrix.generate(mixture, temperature=10.0)
+
+    # Higher temperature should give more uniform distributions
+    cold_entropy = -(cold * torch.log(cold + 1e-10)).sum(dim=-1).mean()
+    hot_entropy = -(hot * torch.log(hot + 1e-10)).sum(dim=-1).mean()
+
+    assert hot_entropy > cold_entropy
+
+
+def test_batch_generation(simple_matrix):
+    """Test generation of multiple matrices simultaneously."""
+    # Create batch of different mixtures
+    mixtures = torch.tensor(
+        [
+            [0.8, 0.2],  # First sequence favors topic 0
+            [0.2, 0.8],  # Second sequence favors topic 1
+        ]
+    )
+
+    transitions = simple_matrix.generate(mixtures)
+
+    # Check batch dimension
+    assert transitions.shape == (2, 9, 9)
+
+    # Check each matrix independently sums to 1
+    row_sums = transitions.sum(dim=-1)
+    assert torch.allclose(row_sums, torch.ones_like(row_sums))
+
+
+def test_min_probability(simple_matrix):
+    """Test that minimum probability is respected for valid transitions."""
+    mixture = torch.ones(1, 2) / 2
+    min_prob = 1e-4
+
+    transitions = simple_matrix.generate(mixture, min_prob=min_prob)
+
+    # Get color mask to identify valid transitions
+    color_mask = simple_matrix.color_space.get_transition_mask()
+    valid_transitions = transitions[0][color_mask > 0]
+
+    # Check minimum probability is respected
+    assert torch.all(valid_transitions >= min_prob)
+
+
+def test_device_consistency(simple_matrix):
+    """Test that all tensors stay on the same device."""
+    mixture = torch.ones(1, 2) / 2
+    transitions = simple_matrix.generate(mixture)
+
+    # All tensors should be on the same device
+    assert transitions.device == simple_matrix.topic_space.vectors.device
+    assert transitions.device == simple_matrix.color_space.mapping.boundaries.device
+
+
+def test_invalid_mixture_shape(simple_matrix):
+    """Test validation of topic mixture shape."""
+    # Wrong number of topics
+    bad_mixture = torch.ones(1, 3) / 3  # 3 topics when space has 2
+
+    with pytest.raises(ValueError):
+        simple_matrix.generate(bad_mixture)
+
+
+def test_reproducibility():
+    """Test that results are reproducible with same random seed."""
+    torch.manual_seed(42)
+    matrix1 = TransitionMatrix.create_uniform(
+        vocab_size=6, n_topics=2, color_fractions=[1, 1]
+    )
+    result1 = matrix1.generate(torch.ones(1, 2) / 2)
+
+    torch.manual_seed(42)
+    matrix2 = TransitionMatrix.create_uniform(
+        vocab_size=6, n_topics=2, color_fractions=[1, 1]
+    )
+    result2 = matrix2.generate(torch.ones(1, 2) / 2)
+
+    assert torch.allclose(result1, result2)
+
+
+
+---
+File: tests/test_vocab_builder.py
+---
+# faux_lingo/tests/test_vocab_builder.py
+"""Tests for vocabulary building functionality."""
+
+import pytest
+
+from faux_lingo.core.vocab_builder import BuilderConfig, VocabBuilder, create_word_hierarchy
+
+
+@pytest.fixture
+def simple_config():
+    """Create simple builder configuration."""
+    return BuilderConfig(
+        token_vocab_size=4,
+        sequence_lengths=[2, 2],  # Two levels, sequences of length 2
+        vocab_sizes=[4, 3],  # 4 chars from tokens, 3 words from chars
+    )
+
+
+def test_config_validation():
+    """Test builder configuration validation."""
+    # Valid configuration
+    config = BuilderConfig(
+        token_vocab_size=4,
+        sequence_lengths=[2, 2],
+        vocab_sizes=[4, 3],
+    )
+    assert config.token_vocab_size == 4
+
+    # Invalid token vocab size
+    with pytest.raises(ValueError, match="token_vocab_size must be positive"):
+        BuilderConfig(
+            token_vocab_size=0,
+            sequence_lengths=[2],
+            vocab_sizes=[4],
+        )
+
+    # Mismatched lengths
+    with pytest.raises(ValueError, match="sequence length and vocabulary size"):
+        BuilderConfig(
+            token_vocab_size=4,
+            sequence_lengths=[2],
+            vocab_sizes=[4, 3],
+        )
+
+    # Invalid sequence length
+    with pytest.raises(ValueError, match="sequence lengths must be positive"):
+        BuilderConfig(
+            token_vocab_size=4,
+            sequence_lengths=[0, 2],
+            vocab_sizes=[4, 3],
+        )
+
+    # Vocabulary too large for combinations
+    with pytest.raises(ValueError, match="exceeds maximum possible combinations"):
+        BuilderConfig(
+            token_vocab_size=2,  # Only 4 possible pairs
+            sequence_lengths=[2],
+            vocab_sizes=[5],  # Want 5 unique pairs
+        )
+
+
+def test_builder_reproducibility(simple_config):
+    """Test that building is reproducible with same seed."""
+    config1 = BuilderConfig(
+        **{**simple_config.__dict__, "seed": 42}
+    )
+    hierarchy1 = VocabBuilder(config1).build()
+
+    config2 = BuilderConfig(
+        **{**simple_config.__dict__, "seed": 42}
+    )
+    hierarchy2 = VocabBuilder(config2).build()
+
+    # Check sequences match at each level
+    for level1, level2 in zip(hierarchy1, hierarchy2):
+        assert level1.sequences == level2.sequences
+
+
+def test_sequence_uniqueness(simple_config):
+    """Test that generated sequences are unique within levels."""
+    hierarchy = VocabBuilder(simple_config).build()
+
+    for level in hierarchy:
+        sequences = set(level.sequences.values())
+        assert len(sequences) == level.vocab_size
+
+
+def test_sequence_validity(simple_config):
+    """Test that sequences use valid tokens from previous level."""
+    hierarchy = VocabBuilder(simple_config).build()
+
+    # Check first level uses valid base tokens
+    for sequence in hierarchy[0].sequences.values():
+        assert all(0 <= token < simple_config.token_vocab_size for token in sequence)
+
+    # Check second level uses valid tokens from first level
+    for sequence in hierarchy[1].sequences.values():
+        assert all(0 <= token < hierarchy[0].vocab_size for token in sequence)
+
+
+def test_create_word_hierarchy():
+    """Test convenience function for word hierarchy creation."""
+    hierarchy = create_word_hierarchy(
+        token_vocab_size=5,
+        n_chars=10,
+        n_words=20,
+        chars_per_word=3,
+        seed=42,
+    )
+
+    assert len(hierarchy) == 2  # Two levels: chars and words
+    assert hierarchy[0].vocab_size == 10  # Number of characters
+    assert hierarchy[1].vocab_size == 20  # Number of words
+    assert all(len(seq) == 3 for seq in hierarchy[1].sequences.values())
+
+
+def test_default_config():
+    """Test default configuration creation."""
+    config = VocabBuilder.create_default_config()
+    
+    # Verify defaults are valid
+    hierarchy = VocabBuilder(config).build()
+    assert len(hierarchy) == 3  # Three levels
+    assert hierarchy[0].vocab_size == 20  # First level vocab size
+    assert hierarchy[1].vocab_size == 15  # Second level vocab size
+    assert hierarchy[2].vocab_size == 10  # Third level vocab size
+
+
+
+---
+File: tests/test_vocab_extensions.py
+---
+# faux_lingo/tests/test_vocab_extensions.py
+"""Tests for vocabulary extension functionality."""
+
+import pytest
+import torch
+
+from faux_lingo.core.vocab_builder import create_word_hierarchy
+from faux_lingo.core.vocab_extensions import (
+    AugmentationConfig,
+    MultiMappingHierarchy,
+    MultiMappingLevel,
+    SequenceAugmenter,
+    convert_to_multi_mapping,
+)
+
+
+@pytest.fixture
+def simple_multi_level():
+    """Create simple multi-mapping level for testing."""
+    return MultiMappingLevel(
+        vocab_size=2,
+        chunk_size=2,
+        sequences={
+            0: [((0, 1), 0.7), ((1, 0), 0.3)],  # Two variants for token 0
+            1: [((1, 1), 1.0)],  # Single mapping for token 1
+        },
+    )
+
+
+@pytest.fixture
+def simple_augmenter():
+    """Create sequence augmenter with test configuration."""
+    config = AugmentationConfig(
+        deletion_prob=0.2,
+        insertion_prob=0.2,
+        substitution_prob=0.2,
+        transposition_prob=0.2,
+        seed=42,
+    )
+    return SequenceAugmenter(vocab_size=4, config=config)
+
+
+def test_multi_level_validation():
+    """Test validation of multi-mapping level properties."""
+    # Valid level
+    level = MultiMappingLevel(
+        vocab_size=1,
+        chunk_size=2,
+        sequences={0: [((0, 1), 1.0)]},
+    )
+    assert level.vocab_size == 1
+
+    # Invalid probabilities
+    with pytest.raises(ValueError, match="do not sum to 1"):
+        MultiMappingLevel(
+            vocab_size=1,
+            chunk_size=2,
+            sequences={0: [((0, 1), 0.5)]},  # Prob < 1
+        )
+
+    # No sequences
+    with pytest.raises(ValueError, match="No sequences defined"):
+        MultiMappingLevel(
+            vocab_size=1,
+            chunk_size=2,
+            sequences={0: []},
+        )
+
+
+def test_multi_hierarchy_decoding(simple_multi_level):
+    """Test sequence decoding with multiple mappings."""
+    hierarchy = MultiMappingHierarchy([simple_multi_level], device="cpu")
+    
+    # Create test sequence
+    tokens = torch.tensor([[0, 1]], device="cpu")
+    
+    # Test reproducibility with seed
+    torch.manual_seed(42)
+    result1 = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    
+    torch.manual_seed(42)
+    result2 = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    
+    assert torch.equal(result1, result2)
+
+
+def test_augmenter_operations(simple_augmenter):
+    """Test individual augmentation operations."""
+    sequence = [0, 1, 2, 3]
+
+    # Test deletion
+    deleted = simple_augmenter._delete(sequence.copy())
+    assert len(deleted) == len(sequence) - 1
+
+    # Test insertion
+    inserted = simple_augmenter._insert(sequence.copy())
+    assert len(inserted) == len(sequence) + 1
+
+    # Test substitution
+    substituted = simple_augmenter._substitute(sequence.copy())
+    assert len(substituted) == len(sequence)
+    assert substituted != sequence
+
+    # Test transposition
+    transposed = simple_augmenter._transpose(sequence.copy())
+    assert len(transposed) == len(sequence)
+    assert transposed != sequence
+
+
+def test_augmenter_sequence_handling(simple_augmenter):
+    """Test sequence augmentation edge cases."""
+    # Empty sequence
+    assert simple_augmenter.augment_sequence(()) == ()
+
+    # Single token
+    single = (0,)
+    augmented = simple_augmenter.augment_sequence(single)
+    assert isinstance(augmented, tuple)
+    assert len(augmented) > 0
+
+    # Reproducibility
+    torch.manual_seed(42)
+    result1 = simple_augmenter.augment_sequence((0, 1, 2))
+    
+    torch.manual_seed(42)
+    result2 = simple_augmenter.augment_sequence((0, 1, 2))
+    
+    assert result1 == result2
+
+
+def test_hierarchy_conversion():
+    """Test conversion from standard to multi-mapping hierarchy."""
+    # Create simple word hierarchy
+    hierarchy = create_word_hierarchy(
+        token_vocab_size=4,
+        n_chars=3,
+        n_words=2,
+        chars_per_word=2,
+        seed=42,
+    )
+
+    # Create augmenter for variants
+    config = AugmentationConfig(
+        deletion_prob=0.1,
+        insertion_prob=0.1,
+        substitution_prob=0.1,
+        transposition_prob=0.1,
+        seed=42,
+    )
+    augmenter = SequenceAugmenter(vocab_size=4, config=config)
+
+    # Convert to multi-mapping
+    multi_hierarchy = convert_to_multi_mapping(
+        hierarchy,
+        augmenter=augmenter,
+        n_variants=3,
+    )
+
+    # Check structure preserved
+    assert len(multi_hierarchy.levels) == len(hierarchy.levels)
+    
+    # Check variants generated
+    for level in multi_hierarchy.levels:
+        for token, variants in level.sequences.items():
+            # At least original sequence plus some variants
+            assert len(variants) > 1
+            # Probabilities sum to 1
+            probs = sum(prob for _, prob in variants)
+            assert torch.isclose(torch.tensor(probs), torch.tensor(1.0))
+
+
+def test_augmentation_config_validation():
+    """Test validation of augmentation configuration."""
+    # Valid config
+    config = AugmentationConfig(
+        deletion_prob=0.1,
+        insertion_prob=0.1,
+        substitution_prob=0.1,
+        transposition_prob=0.1,
+    )
+    assert config.deletion_prob == 0.1
+
+    # Invalid probability value
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        AugmentationConfig(deletion_prob=1.5)
+
+    # Sum too large
+    with pytest.raises(ValueError, match="must not exceed 1"):
+        AugmentationConfig(
+            deletion_prob=0.3,
+            insertion_prob=0.3,
+            substitution_prob=0.3,
+            transposition_prob=0.3,
+        )
+
+
+def test_device_handling():
+    """Test device placement and consistency."""
+    # Create hierarchy on CPU
+    level = MultiMappingLevel(
+        vocab_size=1,
+        chunk_size=2,
+        sequences={0: [((0, 1), 1.0)]},
+    )
+    hierarchy = MultiMappingHierarchy([level], device="cpu")
+
+    # Test decoding maintains device
+    tokens = torch.tensor([[0]], device="cpu")
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    assert result.device.type == "cpu"
+
+    # Test with same level returns input unchanged
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    assert result.device.type == "cpu"
+
+
+
+---
+File: tests/test_vocab_mapping.py
+---
+# faux_lingo/tests/test_vocab_mapping.py
+"""Tests for vocabulary mapping and decoding."""
+
+import pytest
+import torch
+
+from faux_lingo.core.vocab_mapping import VocabHierarchy, VocabLevel
+
+@pytest.fixture
+def simple_hierarchy():
+    """Create a simple 3-level hierarchy for testing.
+    
+    Structure:
+    - Level 0 (most abstract) tokens map to 2 level 1 tokens
+    - Level 1 tokens map to 2 level 2 (most concrete) tokens
+    
+    Example mappings:
+    Level 0 -> Level 1:
+    - 0 -> (0, 1)
+    - 1 -> (1, 2)
+    
+    Level 1 -> Level 2:
+    - 0 -> (0, 1)
+    - 1 -> (2, 3)
+    - 2 -> (3, 4)
+    """
+    levels = [
+        VocabLevel(  # Level 0 -> Level 1 mapping
+            vocab_size=2,
+            chunk_size=2,
+            sequences={
+                0: (0, 1),  # word 0 -> chars [0,1]
+                1: (1, 2),  # word 1 -> chars [1,2]
+            },
+        ),
+        VocabLevel(  # Level 1 -> Level 2 mapping
+            vocab_size=3,
+            chunk_size=2,
+            sequences={
+                0: (0, 1),  # char 0 -> tokens [0,1]
+                1: (2, 3),  # char 1 -> tokens [2,3]
+                2: (3, 4),  # char 2 -> tokens [3,4]
+            },
+        ),
+    ]
+    return VocabHierarchy(levels)
+
+def test_vocab_level_validation():
+    """Test validation of vocabulary level properties."""
+    # Valid level
+    level = VocabLevel(vocab_size=2, chunk_size=1, sequences={0: (0,), 1: (1,)})
+    assert level.max_sequence_length == 1
+
+    # Invalid vocab size
+    with pytest.raises(ValueError, match="vocab_size must be positive"):
+        VocabLevel(vocab_size=0, chunk_size=1, sequences={})
+
+    # Invalid chunk size
+    with pytest.raises(ValueError, match="chunk_size must be positive"):
+        VocabLevel(vocab_size=1, chunk_size=0, sequences={0: (0,)})
+
+    # Mismatched sequence count
+    with pytest.raises(ValueError, match="Number of sequences"):
+        VocabLevel(vocab_size=2, chunk_size=1, sequences={0: (0,)})
+
+    # Invalid sequence type
+    with pytest.raises(ValueError, match="must be a tuple"):
+        VocabLevel(vocab_size=1, chunk_size=1, sequences={0: [0]})
+
+    # Invalid sequence elements
+    with pytest.raises(ValueError, match="must be integers"):
+        VocabLevel(vocab_size=1, chunk_size=1, sequences={0: (0.5,)})
+
+def test_hierarchy_respected():
+    import torch
+    import numpy as np
+    from faux_lingo.core.vocab_builder import BuilderConfig, VocabBuilder
+    
+    config = BuilderConfig(
+        token_vocab_size=10,
+        sequence_lengths=[2, 3],  # Length at each level
+        vocab_sizes=[20, 30]      # Size of each level
+    )
+    
+    builder = VocabBuilder(config)
+    hierarchy = builder.build()
+    
+    tokens = torch.tensor([[0,1,2]])
+    decoded = hierarchy.decode_sequence(tokens,start_level=0, target_level=2)
+    
+    target_length = np.prod( [level.chunk_size for level in hierarchy.levels]) * tokens.shape[1]
+    assert target_length == decoded.shape[1]
+    
+def test_single_token_decoding(simple_hierarchy):
+    """Test decoding of individual tokens."""
+    # Level 0 token 0 maps to level 1 tokens [0,1]
+    # which map to level 2 tokens [0,1,2,3]
+    word = torch.tensor([[0]], device=simple_hierarchy.device)
+    
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(word)
+    assert torch.equal(tokens, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device))
+    
+    # Decode from level 0 to level 1
+    chars = simple_hierarchy.decode_sequence(word, target_level=1)
+    assert torch.equal(chars, torch.tensor([[0, 1]], device=simple_hierarchy.device))
+
+
+def test_sequence_decoding(simple_hierarchy):
+    """Test decoding of token sequences."""
+    # Level 0 sequence [0,1] maps to:
+    # Level 1: [0,1,1,2]
+    # Level 2: [0,1,2,3,2,3,3,4]
+    words = torch.tensor([[0, 1]], device=simple_hierarchy.device)
+    
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(words)
+    assert torch.equal(tokens, 
+        torch.tensor([[0, 1, 2, 3, 2, 3, 3, 4]], device=simple_hierarchy.device))
+    
+    # Decode to intermediate level
+    chars = simple_hierarchy.decode_sequence(words, target_level=1)
+    assert torch.equal(chars, torch.tensor([[0, 1, 1, 2]], device=simple_hierarchy.device))
+
+
+def test_batch_decoding(simple_hierarchy):
+    """Test decoding of batched sequences."""
+    words = torch.tensor([
+        [0, 1],  # First sequence: word 0 followed by word 1
+        [1, 0],  # Second sequence: word 1 followed by word 0
+    ], device=simple_hierarchy.device)
+    
+    # Default decoding (full expansion)
+    tokens = simple_hierarchy.decode_sequence(words)
+    
+    expected = torch.tensor([
+        [0, 1, 2, 3, 2, 3, 3, 4],  # Decoded first sequence
+        [2, 3, 3, 4, 0, 1, 2, 3],  # Decoded second sequence
+    ], device=simple_hierarchy.device)
+    
+    assert torch.equal(tokens, expected)
+
+
+def test_invalid_level_decoding(simple_hierarchy):
+    """Test validation of decoding levels."""
+    words = torch.tensor([[0]], device=simple_hierarchy.device)
+    
+    # Invalid start level (too high)
+    with pytest.raises(ValueError, match="Invalid start_level"):
+        simple_hierarchy.decode_sequence(words, start_level=3)
+        
+    # Invalid target level (negative)
+    with pytest.raises(ValueError, match="Invalid target_level"):
+        simple_hierarchy.decode_sequence(words, target_level=-1)
+    
+    # Can't decode upward
+    with pytest.raises(ValueError, match="Can only decode to same or higher levels"):
+        simple_hierarchy.decode_sequence(words, start_level=1, target_level=0)
+
+
+def test_default_decoding(simple_hierarchy):
+    """Test default decoding behavior."""
+    # Single token at most abstract level
+    word = torch.tensor([[0]], device=simple_hierarchy.device)
+    
+    # These should all be equivalent
+    full_decode = simple_hierarchy.decode_sequence(word)
+    explicit_decode = simple_hierarchy.decode_sequence(word, start_level=0, target_level=2)
+    
+    assert torch.equal(full_decode, explicit_decode)
+    assert torch.equal(full_decode, torch.tensor([[0, 1, 2, 3]], device=simple_hierarchy.device))
+
+
+def test_from_sequences():
+    """Test creation of hierarchy from sequence mappings."""
+    sequences = [
+        {0: (0,), 1: (1,)},  # Base tokens
+        {0: (0, 1)},  # One character
+    ]
+    chunk_sizes = [1, 2]
+
+    hierarchy = VocabHierarchy.from_sequences(sequences, chunk_sizes)
+    assert len(hierarchy) == 2
+    assert hierarchy[0].vocab_size == 2
+    assert hierarchy[1].vocab_size == 1
+
+    # Mismatched lengths
+    with pytest.raises(ValueError, match="chunk size for each level"):
+        VocabHierarchy.from_sequences(sequences, chunk_sizes[:-1])
+
+
+def test_device_handling():
+    """Test device placement and movement of tensors."""
+    # Create two-level hierarchy for testing
+    levels = [
+        VocabLevel(  # Base tokens
+            vocab_size=2,
+            chunk_size=1,
+            sequences={0: (0,), 1: (1,)},
+        ),
+        VocabLevel(  # Higher level tokens
+            vocab_size=2,
+            chunk_size=2,
+            sequences={0: (0, 1), 1: (1, 0)},
+        ),
+    ]
+    hierarchy = VocabHierarchy(levels, device="cpu")
+
+    # Test decoding maintains device
+    tokens = torch.tensor([[0]], device="cpu")
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=1)
+    assert result.device.type == "cpu"
+
+    # Test with same level returns input unchanged
+    # ...this should probably be its own test, no? has nothing to do with device mgmt.
+    tokens = torch.tensor([[0]], device="cpu")
+    result = hierarchy.decode_sequence(tokens, start_level=0, target_level=0)
+    assert result.device.type == "cpu"
+
+    # Input on different device gets moved
+    if torch.cuda.is_available():
+        hierarchy = VocabHierarchy(levels, device="cuda")
+        result = hierarchy.decode_sequence(tokens, start_level=1, target_level=0)
+        assert result.device.type == "cuda"
+
+

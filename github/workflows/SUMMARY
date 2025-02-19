@@ -1,0 +1,124 @@
+---
+File: .github/workflows/ci.yml
+---
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+        
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install base package
+      run: |
+        python -m pip install --upgrade pip
+        echo "::group::Install Timing - Base Package"
+        time pip install -e .
+        echo "::endgroup::"
+        
+    - name: Install dev dependencies
+      run: |
+        echo "::group::Install Timing - Dev Dependencies"
+        time pip install -e ".[dev]"
+        echo "::endgroup::"
+        
+    - name: Run formatters and linters
+      continue-on-error: true
+      run: |
+        echo "Running black..."
+        black faux_lingo
+        echo "Running isort..."
+        isort faux_lingo
+        echo "Running ruff..."
+        ruff check faux_lingo --fix .
+        
+    - name: Commit formatting changes
+      if: github.event_name == 'pull_request'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        if ! git diff --quiet; then
+          git add .
+          git commit -m "Apply automatic formatting and type fixes"
+          git push origin HEAD:${{ github.head_ref }}
+        fi
+        
+    - name: Run tests
+      run: |
+        pytest --cov  
+  
+    - name: Run type checking (informational)
+      continue-on-error: true
+      run: |
+        echo "=== mypy Type Check Report ===" >> $GITHUB_STEP_SUMMARY
+        mypy faux_lingo --pretty | tee -a $GITHUB_STEP_SUMMARY || true
+    
+    - name: Run linting (informational)
+      continue-on-error: true
+      run: |
+        echo "=== Ruff Lint Report ===" >> $GITHUB_STEP_SUMMARY
+        ruff check faux_lingo | tee -a $GITHUB_STEP_SUMMARY || true
+
+
+
+---
+File: .github/workflows/llamero.yml
+---
+name: Llamero Summarization
+
+on:
+  #push:
+  workflow_dispatch:
+
+jobs:
+  generate-summaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install llamero
+      run: pip install llamero
+
+    - name: Generate summaries
+      run: llamero summarize all
+
+
