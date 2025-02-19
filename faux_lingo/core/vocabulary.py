@@ -2,7 +2,7 @@
 """Centralized vocabulary management system."""
 
 from dataclasses import dataclass
-from typing import Optional, TypeAlias
+from typing import TypeAlias
 
 from .special_tokens import SpecialTokens
 from .vocab_mapping import VocabHierarchy, VocabLevel
@@ -20,6 +20,7 @@ class VocabConfig:
         level_sizes: Vocabulary size at each hierarchy level
         use_special_tokens: Which special tokens to include
     """
+
     base_vocab_size: int
     chunk_sizes: list[int]
     level_sizes: list[int]
@@ -29,7 +30,7 @@ class VocabConfig:
         """Validate configuration."""
         if len(self.chunk_sizes) != len(self.level_sizes):
             raise ValueError("Must specify sizes for each hierarchy level")
-        
+
         # Default special tokens configuration
         if self.use_special_tokens is None:
             self.use_special_tokens = {
@@ -43,7 +44,7 @@ class VocabConfig:
 class Vocabulary:
     """
     Central manager for vocabulary components.
-    
+
     Manages:
     1. Base vocabulary for latent transitions
     2. Hierarchical mappings between vocabulary levels
@@ -67,19 +68,18 @@ class Vocabulary:
 
         # Build each level
         for level_size, chunk_size in zip(
-            self.config.level_sizes,
-            self.config.chunk_sizes
+            self.config.level_sizes, self.config.chunk_sizes
         ):
             # Initialize sequences for this level
             sequences: dict[TokenIdx, tuple[int, ...]] = {}
             tokens_per_chunk = chunk_size
-            
+
             # Generate sequential mappings for simplicity
             # In practice, these would be learned or configured
             for token_idx in range(level_size):
                 base_token = token_idx % current_vocab_size
                 sequences[token_idx] = tuple(
-                    (base_token + i) % current_vocab_size 
+                    (base_token + i) % current_vocab_size
                     for i in range(tokens_per_chunk)
                 )
 
@@ -98,8 +98,12 @@ class Vocabulary:
         """Initialize special tokens if configured."""
         if any(self.config.use_special_tokens.values()):
             # Use final level vocabulary size as base for special tokens
-            concrete_vocab_size = self.hierarchy[-1].vocab_size if self.hierarchy else self.config.base_vocab_size
-            
+            concrete_vocab_size = (
+                self.hierarchy[-1].vocab_size
+                if self.hierarchy
+                else self.config.base_vocab_size
+            )
+
             self.special_tokens = SpecialTokens.from_base_vocab(
                 base_vocab_size=concrete_vocab_size,
                 pad=self.config.use_special_tokens["pad"],
@@ -118,7 +122,11 @@ class Vocabulary:
     @property
     def concrete_vocab_size(self) -> int:
         """Total size of concrete vocabulary including special tokens."""
-        base_size = self.hierarchy[-1].vocab_size if self.hierarchy else self.config.base_vocab_size
+        base_size = (
+            self.hierarchy[-1].vocab_size
+            if self.hierarchy
+            else self.config.base_vocab_size
+        )
         if self.special_tokens:
             return self.special_tokens.total_vocab_size
         return base_size
@@ -159,7 +167,7 @@ class Vocabulary:
                 "bos": bos,
                 "eos": eos,
                 "unk": unk,
-            }
+            },
         )
         return cls(config)
 
@@ -197,6 +205,6 @@ class Vocabulary:
                 "bos": bos,
                 "eos": eos,
                 "unk": unk,
-            }
+            },
         )
         return cls(config)
