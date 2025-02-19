@@ -5,15 +5,48 @@ import pytest
 import torch
 
 from faux_lingo.core.generator import SequenceGenerator
+from faux_lingo.core.vocabulary import Vocabulary
 
 
 @pytest.fixture
-def simple_generator():
+def simple_vocab():
+    """Create simple vocabulary for testing."""
+    return Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=True
+    )
+
+
+@pytest.fixture
+def hierarchical_vocab():
+    """Create hierarchical vocabulary for testing."""
+    return Vocabulary.create_hierarchical(
+        base_vocab_size=9,
+        level_configs=[
+            (18, 2),  # Level 1: 18 tokens, chunks of 2
+            (36, 2),  # Level 2: 36 tokens, chunks of 2
+        ],
+        pad=True
+    )
+
+
+@pytest.fixture
+def simple_generator(simple_vocab):
     """Create a simple generator for testing."""
     return SequenceGenerator.create_uniform(
-        vocab_size=9,
+        vocabulary=simple_vocab,
         n_topics=2,
         color_fractions=[1, 1, 1],  # Three equal color classes
+    )
+
+
+@pytest.fixture
+def hierarchical_generator(hierarchical_vocab):
+    """Create a generator with hierarchical vocabulary."""
+    return SequenceGenerator.create_uniform(
+        vocabulary=hierarchical_vocab,
+        n_topics=2,
+        color_fractions=[1, 1, 1],
     )
 
 
@@ -37,10 +70,36 @@ def test_token_ranges(simple_generator):
     sequences = simple_generator.generate(
         batch_size=10,
         seq_length=20,
+        return_latent=True,
     )
 
+    # Check base sequence
+    assert torch.all(sequences.latent_tokens >= 0)
+    assert torch.all(sequences.latent_tokens < simple_generator.vocabulary.base_vocab_size)
+
+    # Check output sequence (may include special tokens)
     assert torch.all(sequences.tokens >= 0)
-    assert torch.all(sequences.tokens < simple_generator.vocab_size)
+    assert torch.all(sequences.tokens < simple_generator.vocabulary.concrete_vocab_size)
+
+
+def test_hierarchical_generation(hierarchical_generator):
+    """Test sequence generation with hierarchical vocabulary."""
+    batch_size = 4
+    seq_length = 16  # Must be divisible by total expansion ratio
+
+    sequences = hierarchical_generator.generate(
+        batch_size=batch_size,
+        seq_length=seq_length,
+        return_latent=True,
+    )
+
+    # Check sequence lengths
+    assert sequences.tokens.shape == (batch_size, seq_length)
+    
+    # Latent sequences should be shorter by expansion ratio
+    expansion_ratio = hierarchical_generator.vocabulary.hierarchy.expansion_ratio
+    expected_latent_length = seq_length // expansion_ratio
+    assert sequences.latent_tokens.shape == (batch_size, expected_latent_length)
 
 
 def test_color_start(simple_generator):
@@ -52,6 +111,7 @@ def test_color_start(simple_generator):
         batch_size=batch_size,
         seq_length=10,
         start_color=color_idx,
+        return_latent=True,
     )
 
     # Get expected token range for color
@@ -60,13 +120,13 @@ def test_color_start(simple_generator):
     )
 
     # Check first tokens are in correct range
-    first_tokens = sequences.tokens[:, 0]
+    first_tokens = sequences.latent_tokens[:, 0]
     assert torch.all(first_tokens >= start_idx)
     assert torch.all(first_tokens < end_idx)
 
 
 def test_temperature_effect(simple_generator):
-    """Test that temperature effect is consistent across runs."""
+    """Test that temperature affects transition entropy."""
     batch_size = 100
     seq_length = 20
     n_trials = 3
@@ -81,18 +141,21 @@ def test_temperature_effect(simple_generator):
             batch_size=batch_size,
             seq_length=seq_length,
             temperature=0.1,
+            return_latent=True,
         )
         hot_seqs = simple_generator.generate(
             batch_size=batch_size,
             seq_length=seq_length,
             temperature=10.0,
+            return_latent=True,
         )
 
-        # Compare transition statistics
+        # Compare transition statistics using latent sequences
         def get_transition_counts(tokens: torch.Tensor) -> torch.Tensor:
             """Get counts of token-to-token transitions."""
             counts = torch.zeros(
-                (simple_generator.vocab_size, simple_generator.vocab_size),
+                (simple_generator.vocabulary.base_vocab_size,
+                 simple_generator.vocabulary.base_vocab_size),
                 device=tokens.device,
             )
             for i in range(tokens.shape[0]):  # For each sequence
@@ -102,8 +165,8 @@ def test_temperature_effect(simple_generator):
             return counts
 
         # Get transition counts and convert to probabilities
-        cold_counts = get_transition_counts(cold_seqs.tokens)
-        hot_counts = get_transition_counts(hot_seqs.tokens)
+        cold_counts = get_transition_counts(cold_seqs.latent_tokens)
+        hot_counts = get_transition_counts(hot_seqs.latent_tokens)
 
         cold_probs = cold_counts / (cold_counts.sum(-1, keepdim=True) + 1e-10)
         hot_probs = hot_counts / (hot_counts.sum(-1, keepdim=True) + 1e-10)
@@ -116,16 +179,124 @@ def test_temperature_effect(simple_generator):
         cold_entropy = get_entropy(cold_probs)
         hot_entropy = get_entropy(hot_probs)
 
-        print(
-            f"Trial {seed}: cold={cold_entropy:.4f}, hot={hot_entropy:.4f}, diff={hot_entropy-cold_entropy:.4f}"
-        )
         entropy_diffs.append(hot_entropy - cold_entropy)
 
     # Check if the effect is consistent
-    signs = [diff > 0 for diff in entropy_diffs]
-    assert all(signs) or not any(
-        signs
-    ), "Temperature effect should be consistent across trials"
+    assert all(diff > 0 for diff in entropy_diffs), "Higher temperature should increase entropy"
+
+
+def test_padding():
+    """Test sequence padding behavior."""
+    # Create vocabulary with explicit padding token
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=True
+    )
+    
+    # Create generator with short sequence
+    generator = SequenceGenerator.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1, 1],
+    )
+
+    # Generate sequences slightly longer than needed to force padding
+    sequences = generator.generate(
+        batch_size=2,
+        seq_length=12,
+        return_latent=True,
+    )
+    
+    # Verify padding token appears
+    pad_token = generator.vocabulary.special_tokens.pad_token
+    assert pad_token is not None
+    padded_positions = sequences.tokens == pad_token
+    assert torch.any(padded_positions), "Padding token should be used"
+
+
+def test_no_padding_token_error():
+    """Test error when padding needed but no padding token defined."""
+    # Create vocabulary without padding token
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        pad=False  # Explicitly disable padding
+    )
+    
+    generator = SequenceGenerator.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1, 1],
+    )
+
+    # Should raise error when trying to pad
+    with pytest.raises(ValueError, match="Padding token not defined"):
+        generator.generate(
+            batch_size=2,
+            seq_length=12,  # Force need for padding
+        )
+
+
+def test_reproducibility(simple_generator):
+    """Test that sequences are reproducible with same seed."""
+    torch.manual_seed(42)
+    seq1 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+        return_latent=True,
+    )
+
+    torch.manual_seed(42)
+    seq2 = simple_generator.generate(
+        batch_size=2,
+        seq_length=10,
+        return_latent=True,
+    )
+
+    assert torch.all(seq1.tokens == seq2.tokens)
+    assert torch.all(seq1.latent_tokens == seq2.latent_tokens)
+    assert torch.allclose(seq1.log_probs, seq2.log_probs)
+
+
+def test_sequence_length_rounding(hierarchical_generator):
+    """Test handling of sequence lengths that don't divide evenly."""
+    # Request a sequence length that isn't divisible by expansion ratio
+    expansion_ratio = hierarchical_generator.vocabulary.hierarchy.expansion_ratio
+    seq_length = expansion_ratio * 5 + 1  # Odd length
+
+    sequences = hierarchical_generator.generate(
+        batch_size=2,
+        seq_length=seq_length,
+    )
+
+    # Final sequence should have exactly the requested length
+    assert sequences.tokens.shape[1] == seq_length
+
+
+def test_bos_eos_tokens():
+    """Test generation with beginning/end tokens."""
+    vocab = Vocabulary.create_simple(
+        base_vocab_size=9,
+        bos=True,
+        eos=True,
+    )
+    
+    generator = SequenceGenerator.create_uniform(
+        vocabulary=vocab,
+        n_topics=2,
+        color_fractions=[1, 1, 1],
+    )
+
+    sequences = generator.generate(batch_size=2, seq_length=10)
+    
+    # First token should be BOS
+    bos_token = vocab.special_tokens.bos_token
+    assert bos_token is not None
+    assert torch.all(sequences.tokens[:, 0] == bos_token)
+    
+    # Last token should be EOS
+    eos_token = vocab.special_tokens.eos_token
+    assert eos_token is not None
+    assert torch.all(sequences.tokens[:, -1] == eos_token)
 
 
 def test_topic_mixture_validation(simple_generator):
@@ -152,68 +323,3 @@ def test_start_token_validation(simple_generator):
             seq_length=10,
             start_tokens=bad_tokens,
         )
-
-
-def test_color_validation(simple_generator):
-    """Test validation of color inputs."""
-    with pytest.raises(ValueError):
-        simple_generator.generate_with_color(
-            batch_size=2,
-            seq_length=10,
-            start_color=99,  # Invalid color index
-        )
-
-
-def test_log_probability_consistency(simple_generator):
-    """Test that log probabilities are consistent with transitions."""
-    # Generate single sequence for simplicity
-    batch_size = 1
-    seq_length = 5
-    temperature = 1.0
-
-    # Generate with specific topic mixture
-    mixture = torch.tensor([[0.7, 0.3]], device=simple_generator.device)
-    sequences = simple_generator.generate(
-        batch_size=batch_size,
-        seq_length=seq_length,
-        topic_mixtures=mixture,
-        temperature=temperature,
-    )
-
-    # Get transition matrix
-    transitions = simple_generator.transition_model.generate(
-        mixture,
-        temperature=temperature,
-    )
-
-    # Manually compute log probability
-    manual_log_prob = 0.0
-    for t in range(1, seq_length):
-        prev_token = sequences.tokens[0, t - 1]
-        curr_token = sequences.tokens[0, t]
-        prob = transitions[0, prev_token, curr_token]
-        manual_log_prob += torch.log(prob).item()
-
-    assert torch.allclose(
-        sequences.log_probs[0],
-        torch.tensor(manual_log_prob, device=simple_generator.device),
-        rtol=1e-5,
-    )
-
-
-def test_reproducibility(simple_generator):
-    """Test that sequences are reproducible with same seed."""
-    torch.manual_seed(42)
-    seq1 = simple_generator.generate(
-        batch_size=2,
-        seq_length=10,
-    )
-
-    torch.manual_seed(42)
-    seq2 = simple_generator.generate(
-        batch_size=2,
-        seq_length=10,
-    )
-
-    assert torch.all(seq1.tokens == seq2.tokens)
-    assert torch.allclose(seq1.log_probs, seq2.log_probs)

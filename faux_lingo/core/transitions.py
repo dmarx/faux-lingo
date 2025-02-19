@@ -8,6 +8,7 @@ from typing_extensions import Self
 
 from .colors import ColorSpace
 from .topics import TopicVectorSpace
+from .vocabulary import Vocabulary
 
 # Type aliases for dimensions
 BatchDim: TypeAlias = int
@@ -26,6 +27,7 @@ class TransitionMatrix:
 
     def __init__(
         self,
+        vocabulary: Vocabulary,
         topic_space: TopicVectorSpace,
         color_space: ColorSpace,
         device: str | None = None,
@@ -34,6 +36,7 @@ class TransitionMatrix:
         Initialize transition matrix generator.
 
         Args:
+            vocabulary: Vocabulary configuration and mappings
             topic_space: Space of topic vectors
             color_space: Color class definitions and rules
             device: Optional compute device, defaults to CPU
@@ -41,16 +44,21 @@ class TransitionMatrix:
         Raises:
             ValueError: If spaces have incompatible dimensions
         """
-        if topic_space.vocab_size != color_space.vocab_size:
+        if topic_space.vocab_size != vocabulary.base_vocab_size:
             raise ValueError(
-                f"Vocab size mismatch: topics ({topic_space.vocab_size}) "
-                f"!= colors ({color_space.vocab_size})"
+                f"Topic space vocab size ({topic_space.vocab_size}) "
+                f"!= base vocab size ({vocabulary.base_vocab_size})"
+            )
+        if color_space.vocab_size != vocabulary.base_vocab_size:
+            raise ValueError(
+                f"Color space vocab size ({color_space.vocab_size}) "
+                f"!= base vocab size ({vocabulary.base_vocab_size})"
             )
 
         self.device = device if device else "cpu"
+        self.vocabulary = vocabulary
         self.topic_space = topic_space
         self.color_space = color_space
-        self.vocab_size = topic_space.vocab_size
 
     def generate(
         self,
@@ -80,7 +88,8 @@ class TransitionMatrix:
         # Convert to transition matrix
         # Each row i is the topic distribution masked by valid transitions from token i
         # Expand base probabilities to transition matrix shape
-        transitions = base_probs.unsqueeze(1).expand(-1, self.vocab_size, -1)
+        base_size = self.vocabulary.base_vocab_size
+        transitions = base_probs.unsqueeze(1).expand(-1, base_size, -1)
 
         # Apply color mask to enforce transition constraints
         color_mask = self.color_space.get_transition_mask()
@@ -107,7 +116,7 @@ class TransitionMatrix:
     @classmethod
     def create_uniform(
         cls,
-        vocab_size: int,
+        vocabulary: Vocabulary,
         n_topics: int,
         color_fractions: list[float],
         device: str | None = None,
@@ -116,7 +125,7 @@ class TransitionMatrix:
         Create transition matrix with uniform topic vectors and color transitions.
 
         Args:
-            vocab_size: Size of token vocabulary
+            vocabulary: Vocabulary configuration
             n_topics: Number of topics to use
             color_fractions: Relative sizes of color classes
             device: Optional compute device
@@ -126,15 +135,15 @@ class TransitionMatrix:
         """
         topic_space = TopicVectorSpace(
             n_topics=n_topics,
-            vocab_size=vocab_size,
+            vocab_size=vocabulary.base_vocab_size,
             device=device,
         )
         color_space = ColorSpace(
             color_fractions=color_fractions,
-            vocab_size=vocab_size,
+            vocab_size=vocabulary.base_vocab_size,
             device=device,
         )
-        return cls(topic_space, color_space, device=device)
+        return cls(vocabulary, topic_space, color_space, device=device)
 
     def save(self, path: str) -> None:
         """Save transition parameters."""
