@@ -93,8 +93,11 @@ class SequenceGenerator:
             produce the desired output length.
         """
         # Compute required latent sequence length
-        latent_length = (seq_length if self.vocab_hierarchy is None 
-                        else self.vocab_hierarchy.compute_latent_length(seq_length))
+        latent_length = (
+            seq_length
+            if self.vocab_hierarchy is None
+            else self.vocab_hierarchy.compute_latent_length(seq_length)
+        )
 
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -166,7 +169,7 @@ class SequenceGenerator:
                 start_level=0,  # Most abstract level
                 target_level=len(self.vocab_hierarchy),  # Most concrete level
             )
-            
+
             # Verify or adjust output sequence length
             actual_length = tokens.shape[1]
             if actual_length < seq_length:
@@ -174,7 +177,7 @@ class SequenceGenerator:
                 padding = torch.zeros(
                     (batch_size, seq_length - actual_length),
                     dtype=torch.long,
-                    device=self.device
+                    device=self.device,
                 )
                 tokens = torch.cat([tokens, padding], dim=1)
             elif actual_length > seq_length:
