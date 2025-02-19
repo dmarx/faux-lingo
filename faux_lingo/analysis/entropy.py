@@ -64,7 +64,11 @@ class EntropyAnalyzer:
             Uses latent sequences for transition analysis when available
         """
         # Use latent sequences for analysis if available
-        tokens = sequences.latent_tokens if sequences.latent_tokens is not None else sequences.tokens
+        tokens = (
+            sequences.latent_tokens
+            if sequences.latent_tokens is not None
+            else sequences.tokens
+        )
 
         metrics = EntropyMetrics(
             color_entropy=self._compute_color_entropy(tokens),
