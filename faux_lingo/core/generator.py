@@ -94,7 +94,91 @@ class SequenceGenerator:
             device=self.device,
         )
         return torch.cat([sequence, padding], dim=1)
-
+    
+    def _add_special_tokens(
+        self,
+        sequence: torch.Tensor,
+        target_length: int,
+    ) -> torch.Tensor:
+        """Add special tokens and padding to sequence.
+    
+        Args:
+            sequence: Input sequence to modify
+            target_length: Desired final sequence length
+    
+        Returns:
+            Modified sequence with special tokens and padding
+    
+        Notes:
+            - BOS token is added at start if specified
+            - EOS token is added at end if specified
+            - Padding is added as needed to reach target length
+        """
+        batch_size = sequence.shape[0]
+        current_length = sequence.shape[1]
+        special_tokens = self.vocabulary.special_tokens
+    
+        if special_tokens is None:
+            return sequence
+            
+        # Start with original sequence
+        result = sequence
+    
+        # Add BOS token if specified
+        if special_tokens.bos_token is not None:
+            bos = torch.full(
+                (batch_size, 1),
+                special_tokens.bos_token,
+                dtype=torch.long,
+                device=self.device
+            )
+            result = torch.cat([bos, result], dim=1)
+            current_length += 1
+    
+        # Add EOS token if specified
+        if special_tokens.eos_token is not None:
+            eos = torch.full(
+                (batch_size, 1),
+                special_tokens.eos_token,
+                dtype=torch.long,
+                device=self.device
+            )
+            result = torch.cat([result, eos], dim=1)
+            current_length += 1
+    
+        # Add padding if needed
+        if current_length < target_length:
+            if special_tokens.pad_token is None:
+                raise ValueError("Padding token not defined")
+                
+            padding = torch.full(
+                (batch_size, target_length - current_length),
+                special_tokens.pad_token,
+                dtype=torch.long,
+                device=self.device
+            )
+            result = torch.cat([result, padding], dim=1)
+        elif current_length > target_length:
+            # Truncate if too long, preserving BOS/EOS if present
+            if special_tokens.bos_token is not None:
+                # Keep BOS token
+                result = torch.cat([
+                    result[:, :1],
+                    result[:, 1:target_length-1],
+                    result[:, -1:] if special_tokens.eos_token is not None else result[:, target_length-1:target_length]
+                ], dim=1)
+            else:
+                # No BOS token
+                if special_tokens.eos_token is not None:
+                    result = torch.cat([
+                        result[:, :target_length-1],
+                        result[:, -1:]
+                    ], dim=1)
+                else:
+                    result = result[:, :target_length]
+    
+        return result
+    
     def generate(
         self,
         batch_size: int,
@@ -105,9 +189,8 @@ class SequenceGenerator:
         min_prob: float = 1e-6,
         return_latent: bool = False,
     ) -> GeneratedSequences:
-        """
-        Generate batch of sequences.
-
+        """Generate batch of sequences.
+    
         Args:
             batch_size: Number of sequences to generate
             seq_length: Desired length of final token sequences
@@ -116,50 +199,52 @@ class SequenceGenerator:
             start_tokens: Optional initial tokens [batch_size]
             min_prob: Minimum probability for valid transitions
             return_latent: Whether to return latent transition sequences
-
+    
         Returns:
             GeneratedSequences containing tokens and properties
-
-        Notes:
-            If vocab_hierarchy exists, seq_length specifies the length of the final
-            decoded sequences. The length of latent sequences will be adjusted to
-            produce the desired output length.
         """
+        # Account for special tokens in target length
+        special_tokens = self.vocabulary.special_tokens
+        target_length = seq_length
+        if special_tokens is not None:
+            # Subtract space needed for BOS/EOS tokens
+            if special_tokens.bos_token is not None:
+                target_length -= 1
+            if special_tokens.eos_token is not None:
+                target_length -= 1
+    
         # Compute required latent sequence length
-        latent_length = (
-            seq_length
-            if not self.vocabulary.has_hierarchy
-            else self.vocabulary.hierarchy.compute_latent_length(seq_length)
-        )
-
+        latent_length = (target_length if not self.vocabulary.has_hierarchy 
+                        else self.vocabulary.hierarchy.compute_latent_length(target_length))
+    
         # Get or generate topic mixtures
         if topic_mixtures is None:
             n_topics = self.transition_model.topic_space.n_topics
             topic_mixtures = torch.ones(batch_size, n_topics, device=self.device)
             topic_mixtures = topic_mixtures / n_topics
-
+    
         # Validate topic mixture shape
         if topic_mixtures.shape[0] != batch_size:
             raise ValueError(
                 f"Topic mixture batch size {topic_mixtures.shape[0]} "
                 f"!= requested batch size {batch_size}"
             )
-
+    
         # Generate transition matrix
         transitions = self.transition_model.generate(
             topic_mixtures,
             temperature=temperature,
             min_prob=min_prob,
         )
-
+    
         # Initialize sequences
         latent_sequences = torch.zeros(
             (batch_size, latent_length), dtype=torch.long, device=self.device
         )
-
+    
         # Initialize log probabilities
         log_probs = torch.zeros(batch_size, device=self.device)
-
+    
         # Sample or use provided start tokens
         if start_tokens is not None:
             if start_tokens.shape != (batch_size,):
@@ -170,9 +255,11 @@ class SequenceGenerator:
             latent_sequences[:, 0] = start_tokens
         else:
             latent_sequences[:, 0] = torch.randint(
-                0, self.vocabulary.base_vocab_size, (batch_size,), device=self.device
+                0, self.vocabulary.base_vocab_size,
+                (batch_size,),
+                device=self.device
             )
-
+    
         # Generate rest of sequences
         for t in range(1, latent_length):
             # Get transition probabilities for current tokens
@@ -180,11 +267,11 @@ class SequenceGenerator:
                 torch.arange(batch_size, device=self.device),
                 latent_sequences[:, t - 1],
             ]
-
+    
             # Sample next tokens
             next_tokens = torch.multinomial(current_probs, 1).squeeze(-1)
             latent_sequences[:, t] = next_tokens
-
+    
             # Update log probabilities
             log_probs += torch.log(
                 torch.gather(
@@ -193,7 +280,7 @@ class SequenceGenerator:
                     next_tokens.unsqueeze(1),
                 )
             ).squeeze(-1)
-
+    
         # Decode sequences if hierarchy exists, otherwise use latent sequences
         tokens = latent_sequences
         if self.vocabulary.has_hierarchy:
@@ -202,12 +289,10 @@ class SequenceGenerator:
                 start_level=0,  # Most abstract level
                 target_level=len(self.vocabulary.hierarchy),  # Most concrete level
             )
-
-        # Adjust output sequence length if needed
-        actual_length = tokens.shape[1]
-        if actual_length != seq_length:
-            tokens = self._pad_sequence(tokens, seq_length)
-
+    
+        # Add special tokens and padding
+        tokens = self._add_special_tokens(tokens, seq_length)
+    
         return GeneratedSequences(
             tokens=tokens,
             topic_mixtures=topic_mixtures,
