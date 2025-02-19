@@ -239,13 +239,13 @@ class SequenceAugmenter:
                 seq = op(seq)
 
         return tuple(seq)
-        
+
     def _delete(self, seq: list[int]) -> list[int]:
         """Randomly delete a token."""
         if len(seq) <= 1:
             return seq
         idx = int(torch.randint(len(seq), (1,)).item())
-        return seq[:idx] + seq[idx + 1:]
+        return seq[:idx] + seq[idx + 1 :]
 
     def _insert(self, seq: list[int]) -> list[int]:
         """Insert random token."""

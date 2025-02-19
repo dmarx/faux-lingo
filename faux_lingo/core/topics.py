@@ -90,7 +90,7 @@ class TopicVectorSpace:
         vectors = torch.randn(self.n_topics, self.vocab_size, device=self.device)
         # Use QR decomposition to get orthonormal basis
         Q, _ = torch.linalg.qr(vectors.T)
-        Q_T: torch.Tensor = Q.T # Explicit typing
+        Q_T: torch.Tensor = Q.T  # Explicit typing
         return Q_T
 
     def get_distribution(self, mixture: torch.Tensor) -> torch.Tensor:

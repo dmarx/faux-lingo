@@ -12,6 +12,7 @@ from ..core.generator import GeneratedSequences, SequenceGenerator
 BatchDim: TypeAlias = int
 SeqLen: TypeAlias = int
 
+
 class BatchStats(TypedDict):
     mean_log_prob: float
     topic_weights: list[float]
