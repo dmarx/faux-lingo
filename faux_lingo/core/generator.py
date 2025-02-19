@@ -7,9 +7,8 @@ from typing import TypeAlias
 import torch
 from typing_extensions import Self
 
-from .special_tokens import SpecialTokens
 from .transitions import TransitionMatrix
-from .vocab_mapping import VocabHierarchy
+from .vocabulary import Vocabulary
 
 # Type aliases for dimensions
 BatchDim: TypeAlias = int
@@ -47,8 +46,6 @@ class SequenceGenerator:
     def __init__(
         self,
         transition_model: TransitionMatrix,
-        vocab_hierarchy: VocabHierarchy | None = None,
-        special_tokens: SpecialTokens | None = None,
         device: str | None = None,
     ):
         """
@@ -56,29 +53,11 @@ class SequenceGenerator:
 
         Args:
             transition_model: Model for generating transition matrices
-            vocab_hierarchy: Optional hierarchical vocabulary for decoding
-            special_tokens: Optional special tokens for output sequences
             device: Optional compute device, defaults to CPU
         """
         self.device = device if device else "cpu"
         self.transition_model = transition_model
-        self.vocab_hierarchy = vocab_hierarchy
-        self.special_tokens = special_tokens
-
-        # Validate special tokens if provided
-        if special_tokens is not None:
-            if vocab_hierarchy is None:
-                target_vocab = transition_model.vocab_size
-            else:
-                target_vocab = vocab_hierarchy[-1].vocab_size
-
-            if special_tokens.base_vocab_size != target_vocab:
-                raise ValueError(
-                    f"Special tokens base vocab size ({special_tokens.base_vocab_size}) "
-                    f"doesn't match target vocabulary size ({target_vocab})"
-                )
-
-        self.vocab_size = transition_model.vocab_size
+        self.vocabulary = transition_model.vocabulary
 
     def _pad_sequence(
         self,
@@ -101,15 +80,16 @@ class SequenceGenerator:
         current_length = sequence.shape[1]
         if current_length >= target_length:
             return sequence[:, :target_length]
-
-        if self.special_tokens is None or self.special_tokens.pad_token is None:
+            
+        if (self.vocabulary.special_tokens is None or 
+            self.vocabulary.special_tokens.pad_token is None):
             raise ValueError("Padding token not defined")
-
+            
         padding = torch.full(
             (sequence.shape[0], target_length - current_length),
-            self.special_tokens.pad_token,
+            self.vocabulary.special_tokens.pad_token,
             dtype=torch.long,
-            device=self.device,
+            device=self.device
         )
         return torch.cat([sequence, padding], dim=1)
 
@@ -144,11 +124,8 @@ class SequenceGenerator:
             produce the desired output length.
         """
         # Compute required latent sequence length
-        latent_length = (
-            seq_length
-            if self.vocab_hierarchy is None
-            else self.vocab_hierarchy.compute_latent_length(seq_length)
-        )
+        latent_length = (seq_length if not self.vocabulary.has_hierarchy 
+                        else self.vocabulary.hierarchy.compute_latent_length(seq_length))
 
         # Get or generate topic mixtures
         if topic_mixtures is None:
@@ -188,7 +165,9 @@ class SequenceGenerator:
             latent_sequences[:, 0] = start_tokens
         else:
             latent_sequences[:, 0] = torch.randint(
-                0, self.vocab_size, (batch_size,), device=self.device
+                0, self.vocabulary.base_vocab_size, 
+                (batch_size,), 
+                device=self.device
             )
 
         # Generate rest of sequences
@@ -214,11 +193,11 @@ class SequenceGenerator:
 
         # Decode sequences if hierarchy exists, otherwise use latent sequences
         tokens = latent_sequences
-        if self.vocab_hierarchy is not None:
-            tokens = self.vocab_hierarchy.decode_sequence(
+        if self.vocabulary.has_hierarchy:
+            tokens = self.vocabulary.hierarchy.decode_sequence(
                 latent_sequences,
                 start_level=0,  # Most abstract level
-                target_level=len(self.vocab_hierarchy),  # Most concrete level
+                target_level=len(self.vocabulary.hierarchy),  # Most concrete level
             )
 
         # Adjust output sequence length if needed
@@ -278,36 +257,27 @@ class SequenceGenerator:
     @classmethod
     def create_uniform(
         cls,
-        vocab_size: int,
+        vocabulary: Vocabulary,
         n_topics: int,
         color_fractions: list[float],
-        vocab_hierarchy: VocabHierarchy | None = None,
-        special_tokens: SpecialTokens | None = None,
         device: str | None = None,
     ) -> Self:
         """
         Create generator with uniform topic and color distributions.
 
         Args:
-            vocab_size: Size of token vocabulary
+            vocabulary: Vocabulary configuration
             n_topics: Number of topics
             color_fractions: Relative sizes of color classes
-            vocab_hierarchy: Optional vocabulary hierarchy for decoding
-            special_tokens: Optional special tokens for output sequences
             device: Optional compute device
 
         Returns:
             SequenceGenerator with uniform parameters
         """
         transition_model = TransitionMatrix.create_uniform(
-            vocab_size=vocab_size,
+            vocabulary=vocabulary,
             n_topics=n_topics,
             color_fractions=color_fractions,
             device=device,
         )
-        return cls(
-            transition_model,
-            vocab_hierarchy=vocab_hierarchy,
-            special_tokens=special_tokens,
-            device=device,
-        )
+        return cls(transition_model, device=device)
