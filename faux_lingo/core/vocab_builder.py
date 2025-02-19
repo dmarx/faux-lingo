@@ -88,7 +88,7 @@ class VocabBuilder:
         Returns:
             VocabHierarchy with all levels constructed
         """
-        levels = []
+        levels: list[VocabLevel] = []
         current_vocab_size = self.config.token_vocab_size
 
         # Build each level
@@ -98,7 +98,7 @@ class VocabBuilder:
             logger.debug("Building level {} vocabulary...", level)
 
             # Generate valid sequences for this level
-            sequences = {}
+            sequences: dict[TokenIdx, TokenSeq] = {}
             while len(sequences) < vocab_size:
                 seq = tuple(
                     self._rng.randrange(current_vocab_size) for _ in range(seq_len)
@@ -109,22 +109,15 @@ class VocabBuilder:
                     self._used_sequences[level].add(seq)
 
             # Create vocabulary level
-            level = VocabLevel(
+            vocab_level = VocabLevel(
                 vocab_size=vocab_size,
                 chunk_size=seq_len,
                 sequences=sequences,
             )
-            levels.append(level)
+            levels.append(vocab_level)
 
             # Update for next level
             current_vocab_size = vocab_size
-
-            logger.debug(
-                "Built level {} with {} sequences of length {}",
-                level,
-                vocab_size,
-                seq_len,
-            )
 
         return VocabHierarchy(levels)
 
